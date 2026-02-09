@@ -18,8 +18,8 @@ import copy
 from scheduling_env import SchedulingEnv
 from data_generator import generate_scheduling_data_batch
 
-# TODO: GNN 모델을 추가해주세요
-# from scheduling_model import SchedulingModel
+# GNN 모델 import
+from gnn_model import SchedulingModel
 
 import logging
 import warnings
@@ -28,42 +28,6 @@ import wandb
 warnings.filterwarnings('ignore')
 
 WANDB_AVAILABLE = True  # wandb 사용 가능 여부
-
-class RolloutBuffer:
-    """PPO를 위한 롤아웃 버퍼"""
-    def __init__(self):
-        self.states = []
-        self.actions = []
-        self.log_probs = []
-        self.rewards = []
-        self.values = []
-        self.dones = []
-    
-    def clear(self):
-        self.states = []
-        self.actions = []
-        self.log_probs = []
-        self.rewards = []
-        self.values = []
-        self.dones = []
-    
-    def add(self, state, action, log_prob, reward, value, done):
-        self.states.append(state)
-        self.actions.append(action)
-        self.log_probs.append(log_prob)
-        self.rewards.append(reward)
-        self.values.append(value)
-        self.dones.append(done)
-    
-    def get(self):
-        return {
-            'states': self.states,
-            'actions': self.actions,
-            'log_probs': torch.stack(self.log_probs) if self.log_probs else None,
-            'rewards': torch.stack(self.rewards) if self.rewards else None,
-            'values': torch.stack(self.values) if self.values else None,
-            'dones': torch.tensor(self.dones) if self.dones else None
-        }
 
 def set_random_seed(seed):
     """모든 랜덤 시드를 고정하여 재현 가능한 결과를 보장"""
@@ -106,8 +70,7 @@ class Scheduling_Trainer:
         if mode == 'train':
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             objective = env_params.get('objective', 'tardiness')
-            algorithm = trainer_params.get('algorithm', 'REINFORCE')
-            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{algorithm}"
+            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_REINFORCE"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
             print(f"✅ 체크포인트 저장 폴더 생성: {self.checkpoint_dir}")
         else:
@@ -116,6 +79,7 @@ class Scheduling_Trainer:
         
         self.debug_env = trainer_params.get('debug_env', False)
         self.debug_model = trainer_params.get('debug_model', False)
+        self.debug_instance_info = trainer_params.get('debug_instance_info', False)  # 배치 내 인스턴스별 정보 출력
         
         # Device 설정
         device_mode = trainer_params.get('device_mode', 'hybrid')
@@ -128,14 +92,17 @@ class Scheduling_Trainer:
         print(f"Model Device: {self.model_device}, Environment Device: {self.env_device}")
         print(f"Debug ENV: {self.debug_env}, Debug Model: {self.debug_model}")
         
-        # TODO: 모델 초기화 - GNN 모델 추가 후 주석 해제
-        # self.model = SchedulingModel(self.model_params, debug_model=self.debug_model).to(self.model_device)
-        # self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
+        # 모델 초기화
+        # model_params에 환경 파라미터 추가 (HeteroConv에서 필요)
+        model_params_with_env = copy.deepcopy(self.model_params)
+        model_params_with_env['N_T'] = env_params['N_T']
+        model_params_with_env['N_P'] = env_params['N_P']
         
-        # 임시: 모델이 없으므로 None으로 설정
-        self.model = None
-        self.optimizer = None
-        print("⚠️  경고: GNN 모델이 아직 추가되지 않았습니다. 모델 초기화를 건너뜁니다.")
+        self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.model_device)
+        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
+        
+        print("✅ GNN 모델 초기화 완료")
+        print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
 
         self.result_train_loss_log = []
         
@@ -170,7 +137,6 @@ class Scheduling_Trainer:
             
             # Run 이름 생성
             objective = self.env_params.get('objective', 'tardiness')
-            algorithm = self.trainer_params.get('algorithm', 'REINFORCE')
             n_p = self.env_params.get('N_P', 0)
             n_t = self.env_params.get('N_T', 0)
             batch_size = self.env_params.get('batch_size', 0)
@@ -181,12 +147,12 @@ class Scheduling_Trainer:
             timestamp = datetime.now().strftime("%m%d_%H%M")
             run_name = self.trainer_params.get('wandb_run_name')
             if run_name is None:
-                run_name = f"{objective}_{algorithm}_P{n_p}_T{n_t}_bs{batch_size}_p{pomo_size}_lr{learning_rate}_{adv_norm_str}_{timestamp}"
+                run_name = f"{objective}_REINFORCE_P{n_p}_T{n_t}_bs{batch_size}_p{pomo_size}_lr{learning_rate}_{adv_norm_str}_{timestamp}"
             
             # Config 설정
             config = {
                 "objective": objective,
-                "algorithm": algorithm,
+                "algorithm": "REINFORCE",
                 "N_P": self.env_params.get('N_P'),
                 "N_A_min": self.env_params.get('N_A_min'),
                 "N_A_max": self.env_params.get('N_A_max'),
@@ -378,29 +344,20 @@ class Scheduling_Trainer:
         self.model.zero_grad()  # 그래디언트 초기화
         total_loss = 0  # 전체 손실 초기화
         total_reward = 0  # 전체 보상 초기화
-        
-        # 알고리즘 선택
-        algorithm = self.trainer_params.get('algorithm', 'REINFORCE')
 
         for i in range(self.trainer_params['accumulation_steps']):
             print(f"accumulation_steps: {i}")
             
-            # 알고리즘에 따라 적절한 학습 함수 호출
-            if algorithm == 'PPO':
-                loss, obj_value, step_count, batch_info = self.train_one_micro_batch_ppo()
-                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss:.4f}")
-                total_loss += loss
-            else:  # REINFORCE
-                # REINFORCE loss 타입 확인
-                rl_loss_type = self.trainer_params.get('rl_loss_type', 'standard')
-                if rl_loss_type == 'sil':
-                    loss, obj_value, step_count, batch_info = self.train_one_micro_batch_sil()
-                    print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f} (SIL)")
-                else:
-                    loss, obj_value, step_count, batch_info = self.train_one_micro_batch()
-                    print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
-                loss.backward()  # REINFORCE는 여기서 backward
-                total_loss += loss.item()
+            # REINFORCE loss 타입 확인
+            rl_loss_type = self.trainer_params.get('rl_loss_type', 'standard')
+            if rl_loss_type == 'sil':
+                loss, obj_value, step_count, batch_info = self.train_one_micro_batch_sil()
+                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f} (SIL)")
+            else:
+                loss, obj_value, step_count, batch_info = self.train_one_micro_batch()
+                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
+            loss.backward()  # REINFORCE는 여기서 backward
+            total_loss += loss.item()
             
             # 배치 내 각 인스턴스별 정보 출력 (옵션)
             if self.debug_instance_info:
@@ -430,288 +387,9 @@ class Scheduling_Trainer:
         avg_reward = total_reward / self.trainer_params['accumulation_steps']
         
         return avg_loss, avg_reward
-
-    def train_one_micro_batch_ppo(self):
-        """PPO 알고리즘을 사용한 학습"""
-        # TODO: GNN 모델 추가 후 구현
-        raise NotImplementedError("GNN 모델(SchedulingModel)을 추가한 후 PPO 학습을 구현해주세요.")
-        
-        # Anomaly detection for debugging in-place operation issues
-        torch.autograd.set_detect_anomaly(True)
-        
-        # 학습 데이터 생성 seed 고정 옵션 (디버깅용)
-        training_seed_fix = self.trainer_params.get('training_seed_fix', False)
-        training_seed = self.trainer_params.get('training_seed', None)
-        
-        if training_seed_fix and training_seed is not None:
-            # 매 batch마다 동일한 seed로 고정 (디버깅용)
-            import random
-            import numpy as np
-            random.seed(training_seed)
-            np.random.seed(training_seed)
-            torch.manual_seed(training_seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(training_seed)
-        
-        # 환경 초기화
-        env = SchedulingEnv(self.env_params, debug_env=self.debug_env)
-        self.env = env
-        problem = generate_scheduling_data_batch(self.env_params)
-        env._reset(problem)
-        done = False
-        s = env._get_state()
-        
-        # Rollout buffer 초기화
-        buffer = RolloutBuffer()
-        
-        step_count = 0
-        MAX_STEPS = 1000
-        
-        # Rollout phase: 환경과 상호작용하며 데이터 수집
-        while not done:
-            step_count += 1
-            
-            # Action 샘플링
-            action, log_prob, entropy = self.model.get_action(s)
-            
-            # Value 계산
-            value = self.model.get_value(s)
-            
-            # 환경과 상호작용 (use_step_reward=True로 매 step reward 받기)
-            next_s, reward, done = env.step(action.to('cpu'), use_step_reward=True)
-            
-            # Buffer에 저장 (log_prob과 value는 detach하여 computational graph에서 분리)
-            buffer.add(s, action, log_prob.detach(), reward, value.detach(), done)
-            
-            if not done:
-                s = next_s
-            
-            if step_count >= MAX_STEPS:
-                break
-        
-        # Buffer에서 데이터 가져오기
-        data = buffer.get()
-        
-        # GAE (Generalized Advantage Estimation) 계산
-        rewards = data['rewards']  # (num_steps, batch_size)
-        values = data['values']    # (num_steps, batch_size)
-        old_log_probs = data['log_probs']  # (num_steps, batch_size)
-        
-        # Deadlock 발생 체크 및 제외 (옵션)
-        exclude_deadlock = self.trainer_params.get('exclude_deadlock_instances', False)
-        batch_size = self.env_params['batch_size'] * self.env_params['pomo_size']
-        valid_indices = torch.arange(batch_size)
-        
-        if exclude_deadlock:
-            # deadlock_occurred를 (batch_size, pomo_size)로 reshape
-            deadlock_reshape = env.deadlock_occurred.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-            # 각 배치별로 하나라도 deadlock이 발생하면 해당 배치의 모든 POMO 제외
-            deadlock_per_batch = deadlock_reshape.any(dim=1)  # (batch_size,)
-            
-            num_deadlock = deadlock_per_batch.sum().item()
-            if num_deadlock > 0:
-                print(f"   ⚠️ Deadlock 발생: {num_deadlock}개 배치 제외 (총 {self.env_params['batch_size']}개 중)")
-            
-            # valid한 인스턴스 인덱스 구하기
-            valid_batch_mask = ~deadlock_per_batch  # (batch_size,)
-            valid_indices = []
-            for batch_idx in range(self.env_params['batch_size']):
-                if valid_batch_mask[batch_idx]:
-                    # 해당 배치의 모든 POMO 인덱스 추가
-                    start_idx = batch_idx * self.env_params['pomo_size']
-                    end_idx = start_idx + self.env_params['pomo_size']
-                    valid_indices.extend(range(start_idx, end_idx))
-            
-            valid_indices = torch.tensor(valid_indices, dtype=torch.long)
-            
-            # valid한 인스턴스가 없으면 학습 스킵
-            if len(valid_indices) == 0:
-                print(f"   ❌ 모든 배치에서 deadlock 발생! 이번 micro-batch는 학습하지 않습니다.")
-                batch_info = {
-                    'rewards': rewards.sum(dim=0).reshape(self.env_params['batch_size'], self.env_params['pomo_size']),
-                    'step_count': step_count,
-                    'N_I': env.N_I,
-                    'done_status': env.order_cleared.all(dim=1)
-                }
-                return 0.0, 0.0, step_count, batch_info
-            
-            # valid한 인스턴스만 선택
-            rewards = rewards[:, valid_indices]  # (num_steps, valid_size)
-            values = values[:, valid_indices]    # (num_steps, valid_size)
-            old_log_probs = old_log_probs[:, valid_indices]  # (num_steps, valid_size)
-            
-            # states와 actions도 필터링
-            filtered_states = []
-            for t in range(len(data['states'])):
-                state_list = data['states'][t]
-                filtered_state_list = [state_list[i] for i in valid_indices]
-                filtered_states.append(filtered_state_list)
-            data['states'] = filtered_states
-            
-            filtered_actions = []
-            for t in range(len(data['actions'])):
-                action_tensor = data['actions'][t]
-                filtered_action_tensor = action_tensor[valid_indices]
-                filtered_actions.append(filtered_action_tensor)
-            data['actions'] = filtered_actions
-        
-        # Returns 및 Advantages 계산
-        returns = []
-        advantages = []
-        
-        # 각 배치 인스턴스별로 계산 (valid한 인스턴스만)
-        num_valid = rewards.shape[1]
-        
-        for b in range(num_valid):
-            # 해당 배치의 rewards와 values 추출
-            rewards_b = rewards[:, b]  # (num_steps,)
-            values_b = values[:, b]    # (num_steps,)
-            
-            # Returns 계산 (Monte Carlo return)
-            returns_b = torch.zeros_like(rewards_b)
-            running_return = 0.0
-            for t in reversed(range(len(rewards_b))):
-                running_return = rewards_b[t] + 0.99 * running_return  # gamma=0.99
-                returns_b[t] = running_return
-            
-            # Advantage 계산 (A = R - V)
-            advantages_b = returns_b - values_b
-            
-            returns.append(returns_b)
-            advantages.append(advantages_b)
-        
-        returns = torch.stack(returns, dim=1)  # (num_steps, valid_size)
-        advantages = torch.stack(advantages, dim=1)  # (num_steps, valid_size)
-        
-        # POMO 체크
-        use_pomo = self.env_params['pomo_size'] > 1
-        
-        # Advantage normalization (옵션)
-        # PPO에서는 value function이 이미 baseline 역할, 여기서는 정규화만 적용
-        baseline_type = self.trainer_params.get('baseline_type', 'pomo')
-        normalize_advantage = self.trainer_params.get('normalize_advantage', True)
-        
-        if normalize_advantage:
-            if baseline_type == 'batch':
-                # 배치 전체 표준화 (B×K 전체)
-                print("   ℹ️ PPO Advantage 정규화: 배치 전체 (B×K)")
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            elif baseline_type == 'pomo' and use_pomo:
-                # POMO별 표준화 (인스턴스별)
-                print("   ℹ️ PPO Advantage 정규화: 인스턴스별 (POMO)")
-                # 시간축 평균/표준편차 계산 후 정규화
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            else:
-                print("   ℹ️ PPO Advantage 정규화: 전체 평균/표준편차")
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        
-        # old_log_probs와 values를 device로 이동 (detached 상태)
-        device = next(self.model.parameters()).device
-        old_log_probs = old_log_probs.to(device)
-        returns = returns.to(device)
-        advantages = advantages.to(device)
-        
-        # PPO update epochs
-        ppo_epochs = self.trainer_params.get('ppo_epochs', 4)
-        ppo_clip = self.trainer_params.get('ppo_clip', 0.2)
-        value_coef = self.trainer_params.get('ppo_value_coef', 0.5)
-        entropy_coef = self.trainer_params.get('ppo_entropy_coef', 0.01)
-        
-        total_policy_loss = 0
-        total_value_loss = 0
-        total_entropy = 0
-        
-        for epoch in range(ppo_epochs):
-            # 모든 step에 대해 update
-            for t in range(len(data['states'])):
-                s_t = data['states'][t]
-                action_t = data['actions'][t]
-                old_log_prob_t = old_log_probs[t]  # 이미 detached 상태
-                return_t = returns[t]
-                advantage_t = advantages[t]
-                
-                # 실제 취했던 액션의 log_prob을 현재 정책으로 재계산
-                # forward를 사용하여 logit을 얻고, Categorical로 log_prob 계산
-                s_t_loader = DataLoader(s_t, batch_size=len(s_t))
-                for s_t_batch in s_t_loader:
-                    break
-                s_t_batch = s_t_batch.to(device)
-                action_logits = self.model.forward(s_t_batch)
-                action_logits = action_logits.reshape(len(s_t), -1)
-                
-                new_log_probs_list = []
-                entropies_list = []
-                for b in range(len(s_t)):
-                    mask_b = s_t[b].mask
-                    logits_b = action_logits[b, :len(mask_b)]
-                    
-                    # 마스크 적용
-                    mask_b = mask_b.to(logits_b.device)
-                    if logits_b.device.type == 'cuda':
-                        logits_b = torch.where(mask_b, logits_b, torch.tensor(-1e9, device=logits_b.device))
-                    else:
-                        logits_b = logits_b.clone()
-                        logits_b[~mask_b] = -1e9
-                    
-                    prob_b = F.softmax(logits_b, dim=0)
-                    policy_b = Categorical(prob_b)
-                    
-                    # 기존 액션의 log_prob
-                    new_log_prob_b = policy_b.log_prob(action_t[b])
-                    entropy_b = policy_b.entropy()
-                    
-                    new_log_probs_list.append(new_log_prob_b)
-                    entropies_list.append(entropy_b)
-                
-                new_log_prob_t = torch.stack(new_log_probs_list)
-                entropy_t = torch.stack(entropies_list)
-                
-                # Value 재계산
-                new_value_t = self.model.get_value(s_t)
-                
-                # PPO clipped objective
-                ratio = torch.exp(new_log_prob_t - old_log_prob_t)
-                surr1 = ratio * advantage_t
-                surr2 = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip) * advantage_t
-                policy_loss = -torch.min(surr1, surr2).mean()
-                
-                # Value loss (MSE)
-                value_loss = F.mse_loss(new_value_t, return_t)
-                
-                # Total loss
-                loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_t.mean()
-                
-                # Backward (gradient 누적)
-                loss.backward()
-                
-                total_policy_loss += policy_loss.item()
-                total_value_loss += value_loss.item()
-                total_entropy += entropy_t.mean().item()
-        
-        # 평균 계산
-        num_updates = ppo_epochs * len(data['states'])
-        avg_policy_loss = total_policy_loss / num_updates
-        avg_value_loss = total_value_loss / num_updates
-        avg_entropy = total_entropy / num_updates
-        
-        # 최종 reward 계산 (makespan)
-        final_reward = rewards.sum(dim=0).mean().item()  # 모든 step reward의 합
-        
-        # 배치 정보
-        batch_info = {
-            'rewards': rewards.sum(dim=0).reshape(self.env_params['batch_size'], self.env_params['pomo_size']),
-            'step_count': step_count,
-            'N_I': env.N_I,
-            'done_status': env.order_cleared.all(dim=1)
-        }
-        
-        return avg_policy_loss, final_reward, step_count, batch_info
     
     def train_one_micro_batch(self):
         """REINFORCE 알고리즘을 사용한 학습"""
-        # TODO: GNN 모델 추가 후 구현
-        raise NotImplementedError("GNN 모델(SchedulingModel)을 추가한 후 REINFORCE 학습을 구현해주세요.")
-        
         # Anomaly detection for debugging in-place operation issues
         torch.autograd.set_detect_anomaly(True)
         
@@ -874,9 +552,6 @@ class Scheduling_Trainer:
         각 배치에서 최고 reward를 받은 경로만 선택하여 학습
         (Self-improvement for neural combinatorial optimization: sample without replacement, but improvement - Pirnay et al., 2024)
         """
-        # TODO: GNN 모델 추가 후 구현
-        raise NotImplementedError("GNN 모델(SchedulingModel)을 추가한 후 SIL 학습을 구현해주세요.")
-        
         # Anomaly detection for debugging in-place operation issues
         torch.autograd.set_detect_anomaly(True)
         
@@ -1010,8 +685,8 @@ class Scheduling_Trainer:
             test_file_end: 테스트 끝 파일 번호 (포함)
             data_folder: 데이터 폴더 경로 (기본값: './generated_datasets/data_test')
         """
-        # TODO: GNN 모델 추가 후 구현
-        raise NotImplementedError("GNN 모델(SchedulingModel)을 추가한 후 테스트를 구현해주세요.")
+        print("⚠️  경고: _eval_one_problem은 test.py에서 사용하세요. 학습 중에는 _eval_validation을 사용합니다.")
+        raise NotImplementedError("테스트는 test.py에서 수행하세요.")
         
         if mode == 'test':
             self.model.eval()
@@ -1222,7 +897,7 @@ class Scheduling_Trainer:
         print(f"{'='*60}")
         
         try:
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            checkpoint = torch.load(checkpoint_path, map_location=self.model_device)
             
             # 모델 가중치 로드
             self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -1369,9 +1044,6 @@ class Scheduling_Trainer:
         Returns:
             avg_score: 평균 validation score (목적함수값)
         """
-        # TODO: GNN 모델 추가 후 구현
-        raise NotImplementedError("GNN 모델(SchedulingModel)을 추가한 후 validation을 구현해주세요.")
-        
         if self.validation_problem is None:
             raise RuntimeError("Validation 데이터셋이 준비되지 않았습니다. _prepare_validation_dataset()를 먼저 호출하세요.")
         

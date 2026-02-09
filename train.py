@@ -23,8 +23,8 @@ if __name__ == "__main__":
             
     # 기본 학습 파라미터
     EPOCHS = 500
-    BATCH_SIZE = 16
-    POMO_SIZE = 8  # -1 또는 1로 설정하면 POMO 미사용
+    BATCH_SIZE = 3
+    POMO_SIZE = 2  # -1 또는 1로 설정하면 POMO 미사용
 
     # Wandb 옵션
     USE_WANDB = False
@@ -51,17 +51,8 @@ if __name__ == "__main__":
     USE_ENTROPY_REG = False
     ENTROPY_COEF = 0.01
     
-    # 학습 알고리즘 선택
-    ALGORITHM = 'REINFORCE'  # 'REINFORCE' or 'PPO'
-    
     # REINFORCE Loss 타입
     RL_LOSS_TYPE = 'standard'  # 'standard' or 'sil'
-    
-    # PPO 하이퍼파라미터
-    PPO_EPOCHS = 4
-    PPO_CLIP = 0.2
-    PPO_VALUE_COEF = 0.5
-    PPO_ENTROPY_COEF = 0.01
     
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
@@ -163,12 +154,7 @@ if __name__ == "__main__":
         'mode': 'train',
         'debug_env': DEBUG_ENV,
         'debug_model': DEBUG_MODEL,
-        'algorithm': ALGORITHM,
         'rl_loss_type': RL_LOSS_TYPE,
-        'ppo_epochs': PPO_EPOCHS,
-        'ppo_clip': PPO_CLIP,
-        'ppo_value_coef': PPO_VALUE_COEF,
-        'ppo_entropy_coef': PPO_ENTROPY_COEF,
         'use_validation': USE_VALIDATION,
         'validation_interval': VALIDATION_INTERVAL,
         'validation_batch_size': VALIDATION_BATCH_SIZE,
@@ -187,9 +173,8 @@ if __name__ == "__main__":
         print(f"📂 체크포인트 재개: {RESUME_FROM_CHECKPOINT}")
         print(f"   └─ Epoch 이어받기: {'ON' if RESUME_TRAINING else 'OFF'}")
     
-    print(f"Algorithm: {ALGORITHM}")
-    if ALGORITHM == 'REINFORCE':
-        print(f"  └─ RL Loss Type: {RL_LOSS_TYPE}")
+    print(f"Algorithm: REINFORCE")
+    print(f"  └─ RL Loss Type: {RL_LOSS_TYPE}")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
@@ -200,12 +185,6 @@ if __name__ == "__main__":
         print(f"POMO Size: {POMO_SIZE}")
     
     print(f"Accumulation Steps: {trainer_params['accumulation_steps']}")
-    
-    if ALGORITHM == 'PPO':
-        print(f"PPO Epochs: {PPO_EPOCHS}")
-        print(f"PPO Clip: {PPO_CLIP}")
-        print(f"PPO Value Coef: {PPO_VALUE_COEF}")
-        print(f"PPO Entropy Coef: {PPO_ENTROPY_COEF}")
     
     print(f"\n문제 설정:")
     print(f"  └─ 프로젝트 수: {env_params['N_P']}")
