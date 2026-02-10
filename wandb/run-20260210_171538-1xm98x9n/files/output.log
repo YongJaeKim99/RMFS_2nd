@@ -1,0 +1,39 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 219, in run
+    val_obj_avg = self._eval_validation(validation_batch_size, validation_pomo_size)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 995, in _eval_validation
+    action = self.model.get_max_action(s)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 184, in get_max_action
+    action_logits = self.forward(s)
+                    ^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 63, in forward
+    action_logits = self.gnn_model(state.x, state.edge_index, state)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 297, in forward
+    out = self.gat_layers[layer](emd, edge_index, edge_attr=edge_attr)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\gatv2_conv.py", line 312, in forward
+    edge_index, edge_attr = add_self_loops(
+                            ^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\utils\loop.py", line 382, in add_self_loops
+    def add_self_loops(  # noqa: F811
+
+KeyboardInterrupt

@@ -374,10 +374,10 @@ if __name__ == "__main__":
                         # 단일 배치 추출을 위한 환경 생성 및 GA 변환
                         from data_generator import convert_problem_to_ga_format
                         
-                        # 환경 생성 (단일 배치)
+                        # 환경 생성 (단일 배치) - Test 모드는 무조건 CPU
                         single_env_params = env_params.copy()
                         single_env_params['batch_size'] = 1
-                        temp_env = SchedulingEnv(single_env_params, debug_env=False)
+                        temp_env = SchedulingEnv(single_env_params, debug_env=False, device='cpu')
                         temp_env._reset(problem)
                         
                         # batch_idx에 해당하는 데이터만 추출
@@ -540,10 +540,10 @@ if __name__ == "__main__":
                     
                     try:
                         with torch.no_grad():
-                            # 단일 배치 환경 생성
+                            # 단일 배치 환경 생성 - Test 모드는 무조건 CPU
                             single_env_params = env_params.copy()
                             single_env_params['batch_size'] = 1
-                            test_env = SchedulingEnv(single_env_params, debug_env=False)
+                            test_env = SchedulingEnv(single_env_params, debug_env=False, device='cpu')
                             
                             # 전체 problem에서 batch_idx만 추출하여 단일 배치 문제 생성
                             single_problem = {}
@@ -614,8 +614,8 @@ if __name__ == "__main__":
                         
                         print(f"   ✅ 테스트 데이터 로드: {data_path}")
                         
-                        # 환경 초기화
-                        test_env = SchedulingEnv(env_params, debug_env=False)
+                        # 환경 초기화 - Test 모드는 무조건 CPU
+                        test_env = SchedulingEnv(env_params, debug_env=False, device='cpu')
                         test_env._reset(problem)
                         
                         # 모델에 action space 정보 전달

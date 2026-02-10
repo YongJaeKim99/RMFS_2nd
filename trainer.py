@@ -436,8 +436,13 @@ class Scheduling_Trainer:
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(training_seed)
         
-        # 환경 초기화
-        env = SchedulingEnv(self.env_params, debug_env=self.debug_env)
+        # 환경 초기화 (device_mode에 따라 환경 device 결정)
+        if self.device_mode == 'gpu':
+            env_device = self.device  # GPU 모드: 환경도 GPU
+        else:
+            env_device = 'cpu'  # Hybrid/CPU 모드: 환경은 CPU
+        
+        env = SchedulingEnv(self.env_params, debug_env=self.debug_env, device=env_device)
         self.env = env
         problem = generate_scheduling_data_batch(self.env_params)
         env._reset(problem)
@@ -480,7 +485,14 @@ class Scheduling_Trainer:
             log_prob_tmp += log_prob
             if use_entropy:
                 cumulative_entropy += entropy  # Entropy 누적
-            s, obj_value, done = env.step(action.to('cpu'))  # s 업데이트!
+            
+            # device_mode에 따라 action을 환경 device로 이동
+            if self.device_mode == 'gpu':
+                # GPU 모드: action을 GPU에 유지
+                s, obj_value, done = env.step(action)
+            else:
+                # Hybrid/CPU 모드: action을 CPU로 이동
+                s, obj_value, done = env.step(action.to('cpu'))
 
         # 목적함수값을 reward로 변환 (음수로)
         reward = -obj_value  # reward = -목적함수 (최소화 문제를 최대화 문제로)
@@ -961,8 +973,13 @@ class Scheduling_Trainer:
         val_env_params['batch_size'] = validation_batch_size
         val_env_params['pomo_size'] = validation_pomo_size
         
-        # 고정된 validation 데이터로 환경 초기화
-        val_env = SchedulingEnv(val_env_params, debug_env=False)
+        # 고정된 validation 데이터로 환경 초기화 (device_mode에 따라)
+        if self.device_mode == 'gpu':
+            val_env_device = self.device  # GPU 모드: 환경도 GPU
+        else:
+            val_env_device = 'cpu'  # Hybrid/CPU 모드: 환경은 CPU
+        
+        val_env = SchedulingEnv(val_env_params, debug_env=False, device=val_env_device)
         val_env._reset(self.validation_problem)
         
         # 모델에 action space 정보 전달
@@ -976,7 +993,12 @@ class Scheduling_Trainer:
             while not done:
                 # Greedy action 선택
                 action = self.model.get_max_action(s)
-                s, obj_value, done = val_env.step(action.to('cpu'))
+                
+                # device_mode에 따라 action을 환경 device로 이동
+                if self.device_mode == 'gpu':
+                    s, obj_value, done = val_env.step(action)
+                else:
+                    s, obj_value, done = val_env.step(action.to('cpu'))
         
         # 목적함수값 계산
         obj_value = val_env._get_obj()

@@ -36,16 +36,18 @@ class SchedulingEnv:
         - Makespan: max completion_time across all projects
     """
     
-    def __init__(self, env_params, debug_env=False):
+    def __init__(self, env_params, debug_env=False, device='cpu'):
         """
         환경 초기화
         
         Args:
             env_params: 환경 파라미터 딕셔너리
             debug_env: 디버그 모드 활성화
+            device: 텐서를 생성할 device ('cpu' 또는 'cuda')
         """
         self.env_params = env_params
         self.debug_env = debug_env
+        self.device = torch.device(device)
         
         # 문제 파라미터
         self.batch_size = env_params['batch_size'] * env_params['pomo_size']
@@ -81,33 +83,33 @@ class SchedulingEnv:
             # 외부에서 전달된 문제 사용 (validation 등)
             self.problem = problem
         
-        # 문제 파라미터 추출
+        # 문제 파라미터 추출 (device로 이동)
         self.max_N_A = self.problem['env_params']['max_N_A']
-        self.num_activities = self.problem['num_activities']  # (batch_size,)
+        self.num_activities = self.problem['num_activities'].to(self.device)  # (batch_size,)
         
         # 배치 인덱스
-        self.BATCH_IDX = torch.arange(self.batch_size, dtype=torch.long)
+        self.BATCH_IDX = torch.arange(self.batch_size, dtype=torch.long, device=self.device)
         
         # ========================================
         # Activity 상태 (Static + Dynamic)
         # ========================================
-        # Static
-        self.activity_duration = self.problem['activity_duration']  # (batch_size, max_N_A)
-        self.activity_project = self.problem['activity_project']  # (batch_size, max_N_A)
-        self.activity_eligible_teams = self.problem['activity_eligible_teams']  # (batch_size, max_N_A, N_T)
-        self.activity_predecessors = self.problem['activity_predecessors']  # (batch_size, max_N_A, max_preds)
-        self.activity_mutex = self.problem['activity_mutex']  # (batch_size, max_N_A, max_mutex)
+        # Static (device로 이동)
+        self.activity_duration = self.problem['activity_duration'].to(self.device)  # (batch_size, max_N_A)
+        self.activity_project = self.problem['activity_project'].to(self.device)  # (batch_size, max_N_A)
+        self.activity_eligible_teams = self.problem['activity_eligible_teams'].to(self.device)  # (batch_size, max_N_A, N_T)
+        self.activity_predecessors = self.problem['activity_predecessors'].to(self.device)  # (batch_size, max_N_A, max_preds)
+        self.activity_mutex = self.problem['activity_mutex'].to(self.device)  # (batch_size, max_N_A, max_mutex)
         
-        # Dynamic
-        self.activity_started = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool)  # 시작 여부
-        self.activity_ended = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool)  # 종료 여부
-        self.activity_start_time = torch.full((self.batch_size, self.max_N_A), -1.0)  # 시작 시간 (절대 시간)
-        self.activity_end_time = torch.full((self.batch_size, self.max_N_A), -1.0)  # 종료 시간 (절대 시간)
+        # Dynamic (device에서 생성)
+        self.activity_started = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool, device=self.device)  # 시작 여부
+        self.activity_ended = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool, device=self.device)  # 종료 여부
+        self.activity_start_time = torch.full((self.batch_size, self.max_N_A), -1.0, device=self.device)  # 시작 시간 (절대 시간)
+        self.activity_end_time = torch.full((self.batch_size, self.max_N_A), -1.0, device=self.device)  # 종료 시간 (절대 시간)
         self.activity_remaining_time = self.activity_duration.clone()  # 남은 시간: 초기값 = duration
-        self.activity_assigned_team = torch.full((self.batch_size, self.max_N_A), -1, dtype=torch.long)  # 할당된 팀
+        self.activity_assigned_team = torch.full((self.batch_size, self.max_N_A), -1, dtype=torch.long, device=self.device)  # 할당된 팀
         
         # 패딩된 activity들은 started와 ended를 True로 설정, remaining_time은 0으로 (벡터 연산)
-        activity_indices = torch.arange(self.max_N_A).unsqueeze(0)  # (1, max_N_A)
+        activity_indices = torch.arange(self.max_N_A, device=self.device).unsqueeze(0)  # (1, max_N_A)
         num_activities_expanded = self.num_activities.unsqueeze(1)  # (batch_size, 1)
         padding_mask = activity_indices >= num_activities_expanded  # (batch_size, max_N_A)
         
@@ -118,26 +120,26 @@ class SchedulingEnv:
         # ========================================
         # Project 상태 (Static + Dynamic)
         # ========================================
-        # Static
-        self.project_release_time = self.problem['project_release_time']  # (batch_size, N_P)
-        self.project_due_date = self.problem['project_due_date']  # (batch_size, N_P)
+        # Static (device로 이동)
+        self.project_release_time = self.problem['project_release_time'].to(self.device)  # (batch_size, N_P)
+        self.project_due_date = self.problem['project_due_date'].to(self.device)  # (batch_size, N_P)
         
-        # Dynamic
+        # Dynamic (device에서 생성)
         # project_completion_time은 _get_obj()에서 필요할 때 계산 (중복 저장 안 함)
-        self.project_completed = torch.zeros(self.batch_size, self.N_P, dtype=torch.bool)  # 완료 여부
+        self.project_completed = torch.zeros(self.batch_size, self.N_P, dtype=torch.bool, device=self.device)  # 완료 여부
         
         # ========================================
         # Team 상태 (Dynamic)
         # ========================================
-        self.team_available_time = torch.zeros(self.batch_size, self.N_T)  # 각 팀이 사용 가능한 시간
-        self.team_current_activity = torch.full((self.batch_size, self.N_T), -1, dtype=torch.long)  # 현재 수행 중인 activity
+        self.team_available_time = torch.zeros(self.batch_size, self.N_T, device=self.device)  # 각 팀이 사용 가능한 시간
+        self.team_current_activity = torch.full((self.batch_size, self.N_T), -1, dtype=torch.long, device=self.device)  # 현재 수행 중인 activity
         
         # ========================================
         # Simulation 상태
         # ========================================
-        self.sim_time = torch.zeros(self.batch_size)  # 현재 시뮬레이션 시간
-        self.step_count = torch.zeros(self.batch_size, dtype=torch.long)  # 스텝 카운터
-        self.done = torch.zeros(self.batch_size, dtype=torch.bool)  # 종료 여부
+        self.sim_time = torch.zeros(self.batch_size, device=self.device)  # 현재 시뮬레이션 시간
+        self.step_count = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)  # 스텝 카운터
+        self.done = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)  # 종료 여부
         
         # ========================================
         # 가능한 액션 (Action Mask) - Eligible 기반
@@ -146,7 +148,7 @@ class SchedulingEnv:
         self._initialize_action_space()
         
         # (batch_size, max_action_space) - 가능한 action은 True
-        self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool)        
+        self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool, device=self.device)        
         
         # ========================================
         # 초기 가능한 액션 업데이트
@@ -182,7 +184,7 @@ class SchedulingEnv:
         
         # Action index → (activity, team) 매핑 텐서 생성 (패딩 포함)
         # shape: (batch_size, max_action_space, 2) where [:, :, 0] = activity_id, [:, :, 1] = team_id
-        self.action_to_pair = torch.full((self.batch_size, self.max_action_space, 2), -1, dtype=torch.long)
+        self.action_to_pair = torch.full((self.batch_size, self.max_action_space, 2), -1, dtype=torch.long, device=self.device)
         
         for b in range(self.batch_size):
             for action_idx, (act_id, team_id) in enumerate(action_mappings[b]):
@@ -284,7 +286,7 @@ class SchedulingEnv:
             done: (batch_size,) - 종료 여부
         """
         # Action index를 (activity_id, team_id)로 변환
-        batch_indices = torch.arange(self.batch_size, dtype=torch.long)
+        batch_indices = torch.arange(self.batch_size, dtype=torch.long, device=self.device)
         activity_id = self.action_to_pair[batch_indices, action, 0]
         team_id = self.action_to_pair[batch_indices, action, 1]        
         
@@ -608,7 +610,7 @@ class SchedulingEnv:
             num_nodes = num_act + self.N_T + self.N_P
             
             # 노드 피처 초기화 (8차원, 모두 0으로 시작)
-            node_features = torch.zeros(num_nodes, 8)
+            node_features = torch.zeros(num_nodes, 8, device=self.device)
             
             # 정규화를 위한 시간 스케일
             max_time = max(1.0, self.sim_time[b].item() + 1.0)
@@ -710,11 +712,11 @@ class SchedulingEnv:
                 edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
             
             if edge_index_list:
-                edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
-                edge_attr = torch.tensor(edge_attr_list, dtype=torch.float)
+                edge_index = torch.tensor(edge_index_list, dtype=torch.long, device=self.device).t().contiguous()
+                edge_attr = torch.tensor(edge_attr_list, dtype=torch.float, device=self.device)
             else:
-                edge_index = torch.empty((2, 0), dtype=torch.long)
-                edge_attr = torch.empty((0, 1), dtype=torch.float)
+                edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
+                edge_attr = torch.empty((0, 1), dtype=torch.float, device=self.device)
             
             # ========================================
             # Action 마스크 (가능한 action만 True)
