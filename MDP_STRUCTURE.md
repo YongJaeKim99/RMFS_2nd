@@ -18,66 +18,89 @@ State는 **이종 그래프(Heterogeneous Graph)** 구조로 표현됩니다.
 2. **Team 노드**: 리소스 (고정 `N_T`개)
 3. **Project 노드**: 프로젝트 (고정 `N_P`개)
 
-#### **엣지 타입**
+#### **엣지 타입 및 엣지 피처**
 1. **Activity → Activity (Precedence)**
    - 의미: 선행 관계 (A → B: A가 완료되어야 B 시작 가능)
    - 방향: 단방향 (선행 → 후행)
    - 소스: `activity_predecessors` (batch_size, max_N_A, max_preds)
+   - **엣지 피처**: 없음 (구조 정보만)
 
 2. **Activity ↔ Activity (Mutex)**
    - 의미: 동시 실행 불가 (자원 충돌)
    - 방향: 양방향
    - 소스: `activity_mutex` (batch_size, max_N_A, max_mutex)
+   - **엣지 피처**: `is_ordered` (1차원)
+     - 평소: 0
+     - 둘 중 하나가 시작하면 선후관계 발생 → 1
+     - 동적으로 업데이트됨
 
-3. **Activity → Team (Eligible)**
+3. **Activity ↔ Team (Eligible)**
    - 의미: Activity가 할당 가능한 Team
-   - 방향: 단방향 (Activity → Team)
+   - 방향: **양방향** (Activity ↔ Team)
    - 소스: `activity_eligible_teams` (batch_size, max_N_A, N_T)
+   - **엣지 피처**: `is_assigned` (1차원)
+     - 평소: 0
+     - Activity가 해당 Team에 할당되면 → 1
+     - **양방향 모두 업데이트됨**
 
-4. **Activity → Project (Belongs-to)**
+4. **Activity ↔ Project (Belongs-to)**
    - 의미: Activity가 속한 Project
-   - 방향: 단방향 (Activity → Project)
+   - 방향: **양방향** (Activity ↔ Project)
    - 소스: `activity_project` (batch_size, max_N_A)
+   - **엣지 피처**: 없음 (구조 정보만)
 
 ### 1.2 노드 피처
 
-#### **Activity 노드 피처** (차원: 10)
-```python
-# Static 속성
-- duration: float              # Activity 수행 시간 (정규화: /10.0)
-- project_id: float            # 소속 프로젝트 ID (정규화: /N_P)
+모든 노드는 **동일한 차원 (8차원)**을 사용하며, 각 노드 타입은 자신의 피처 위치에만 값을 채우고 나머지는 0으로 패딩합니다.
 
-# Dynamic 속성
-- started: bool                # 시작 여부 (0 또는 1)
-- ended: bool                  # 완료 여부 (0 또는 1)
-- start_time: float            # 시작 시간 (정규화: /max_time)
-- remaining_time: float        # 남은 수행 시간 (절대값)
+#### **전체 노드 피처 구조** (차원: 8)
+```python
+# 인덱스:     0          1        2       3             4              5            6        7
+# 피처:   [duration, started, ended, remain_time, avail_time, release_time, due_date, completed]
+#         |<-- Activity (4) -->||<- Team ->||<------ Project (3) ------>|
 ```
 
-**추가 정보** (엣지로 표현):
-- `predecessors`: 선행 작업 목록
-- `mutex`: 동시 실행 불가 작업 목록
-- `eligible_teams`: 할당 가능한 팀 목록
-- `assigned_team`: 현재 할당된 팀 (Dynamic)
-
-#### **Team 노드 피처** (차원: 10)
+#### **Activity 노드 피처**
 ```python
-- available_time: float        # 팀이 다시 사용 가능한 시간 (정규화: /max_time)
-- is_busy: bool                # 현재 작업 중인지 여부
-```
+# 위치: 인덱스 0~3 사용, 4~7은 0으로 패딩
+[duration, started, ended, remaining_time, 0, 0, 0, 0]
 
-**추가 정보**:
-- `current_activity`: 현재 수행 중인 Activity ID (Dynamic)
-
-#### **Project 노드 피처** (차원: 10)
-```python
 # Static 속성
-- release_time: float          # 프로젝트 시작 가능 시간 (정규화: /max_time)
-- due_date: float              # 납기 (정규화: /max_time)
+- [0] duration: float              # Activity 수행 시간 (정규화: /duration_max)
 
 # Dynamic 속성
-- completion_time: float       # 완료 시간 (정규화: /max_time)
-- completed: bool              # 완료 여부 (0 또는 1)
+- [1] started: bool                # 시작 여부 (0 또는 1)
+- [2] ended: bool                  # 완료 여부 (0 또는 1)
+- [3] remaining_time: float        # 남은 수행 시간 (정규화: /duration_max)
+                                   # - 완료된 경우: 0
+                                   # - 진행 중: duration - elapsed_time
+                                   # - 시작 안 한 경우: duration
+```
+
+**참고**: 선행 작업, Mutex, 할당 가능한 팀 등의 정보는 엣지 구조로 표현됩니다.
+
+#### **Team 노드 피처**
+```python
+# 위치: 인덱스 0~3은 0으로 패딩, 4 사용, 5~7은 0으로 패딩
+[0, 0, 0, 0, available_time, 0, 0, 0]
+
+# Dynamic 속성
+- [4] available_time: float        # 팀이 다시 사용 가능한 시간 (정규화: /max_time)
+                                   # - 사용 가능: 0
+                                   # - 사용 중: 남은 시간 (양수)
+```
+
+#### **Project 노드 피처**
+```python
+# 위치: 인덱스 0~4는 0으로 패딩, 5~7 사용
+[0, 0, 0, 0, 0, release_time, due_date, completed]
+
+# Static 속성
+- [5] release_time: float          # 프로젝트 시작 가능 시간 (정규화: /max_time)
+- [6] due_date: float              # 납기 (정규화: /max_time)
+
+# Dynamic 속성
+- [7] completed: bool              # 완료 여부 (0 또는 1)
 ```
 
 ### 1.3 State 텐서 구조
@@ -85,8 +108,16 @@ State는 **이종 그래프(Heterogeneous Graph)** 구조로 표현됩니다.
 ```python
 # 배치별로 PyG Data 객체 생성
 Data(
-    x: Tensor,                  # (num_nodes, 10) - 노드 피처
+    x: Tensor,                  # (num_nodes, 8) - 노드 피처 (모든 노드 동일 차원)
+                                # Activity: [0:4] 사용, [4:] 패딩 (인덱스 0,1,2,3)
+                                # Team: [0:4] 패딩, [4] 사용, [5:] 패딩 (인덱스 4)
+                                # Project: [0:5] 패딩, [5:8] 사용 (인덱스 5,6,7)
     edge_index: Tensor,         # (2, num_edges) - 엣지 연결 정보
+    edge_attr: Tensor,          # (num_edges, edge_feature_dim) - 엣지 피처
+                                # Precedence: 없음 (구조만)
+                                # Mutex: 1차원 (is_ordered)
+                                # Eligible: 1차원 (is_assigned, 양방향)
+                                # Belongs-to: 없음 (구조만)
     mask: Tensor,               # (max_action_space,) - 가능한 action 마스크
     batch_idx: int,             # 배치 인덱스
     num_activities: int,        # 실제 activity 수
@@ -210,11 +241,15 @@ obj = max_{p=1}^{N_P} completion_time[p]
    ↓
 2. Activity 스케줄링
    - activity_started[b, activity_id] = True
-   - activity_start_time[b, activity_id] = sim_time[b]
-   - activity_end_time[b, activity_id] = sim_time[b] + duration
+   - activity_start_time[b, activity_id] = sim_time[b]  (내부 추적용)
+   - activity_end_time[b, activity_id] = sim_time[b] + duration  (내부 추적용)
    - activity_remaining_time[b, activity_id] = duration
    - activity_assigned_team[b, activity_id] = team_id
    - team_available_time[b, team_id] = sim_time[b] + duration
+   
+   **엣지 피처 업데이트:**
+   - Activity→Team 엣지: is_assigned[activity_id, team_id] = 1
+   - Mutex 엣지: activity_id가 시작되면 mutex 관계의 엣지 is_ordered = 1
    ↓
 3. 시간 진행 (move_next_state)
    LOOP:
@@ -226,7 +261,7 @@ obj = max_{p=1}^{N_P} completion_time[p]
    - activity_remaining_time[b, :] -= time_delta
    - activity_ended[b, completed_acts] = True
    - team_current_activity[b, completed_teams] = -1
-   - project_completion_time 업데이트
+   - project_completion_time 업데이트 (내부 추적용)
    ↓
 5. 종료 조건 확인
    - 모든 Activity 완료 → done = True
@@ -281,7 +316,10 @@ def get_next_move_t(batch_idxs):
 ┌─────────────────────────────────────────────────────┐
 │  State s_{t+1}                                      │
 │  - 그래프 구조 유지 (노드/엣지 불변)                 │
-│  - Dynamic 속성 업데이트                            │
+│  - Dynamic 노드 피처 업데이트                        │
+│    (started, ended, remaining_time, available_time) │
+│  - Dynamic 엣지 피처 업데이트                        │
+│    (is_ordered, is_assigned)                        │
 │  - sim_time = t + Δt                                │
 └─────────────────────────────────────────────────────┘
                     │
@@ -299,11 +337,17 @@ def get_next_move_t(batch_idxs):
 ```
 Input: Heterogeneous Graph
   ↓
-Node Embedding: Linear(input_dim=10, embedding_dim=128)
+Node Feature (8차원 패딩 방식):
+  - Activity: [0:4] 사용, [4:8] 패딩
+  - Team: [4] 사용, 나머지 패딩
+  - Project: [5:8] 사용, 나머지 패딩
+  ↓
+Node Embedding: Linear(input_dim=8, embedding_dim=128) + ReLU
   ↓
 GAT Layers × L (default: 3)
   - Multi-head attention (heads=8)
-  - Residual connection
+  - Edge features 활용 (Mutex: is_ordered, Eligible: is_assigned)
+  - Residual connection: Concat[GAT_out, input] → Linear(256, 128)
   ↓
 Node Embeddings: (total_nodes, 128)
   ↓
@@ -325,12 +369,17 @@ Policy: π(a|s) = Softmax(masked_logits)
 1. **그래프 구조 학습**
    - GAT를 통해 노드 간 관계 학습
    - Precedence, Mutex, Eligible 관계 반영
+   - **엣지 피처 활용**: Mutex 선후관계, Team 할당 정보
 
-2. **Eligible Action만 디코딩**
+2. **이종 노드 처리**
+   - Activity (4차원), Team (1차원), Project (3차원) 피처를 각각 처리
+   - 통일된 embedding 차원으로 변환 후 GNN 처리
+
+3. **Eligible Action만 디코딩**
    - 모든 (activity, team) 조합이 아닌
    - Eligible한 페어만 계산 (효율성)
 
-3. **Action Masking**
+4. **Action Masking**
    - Feasibility 조건을 만족하지 않는 action → -inf
    - 정책이 항상 유효한 action만 선택
 

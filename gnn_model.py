@@ -295,11 +295,20 @@ class GNNModel(nn.Module):
         Returns:
             action_logits: (total_actions,) - action logit (eligible한 조합만)
         """
+        # 엣지 피처 추출 (있으면 사용)
+        edge_attr = None
+        if hasattr(state, 'edge_attr'):
+            edge_attr = state.edge_attr
+        
         # (1) Encoder: 노드 임베딩 생성
         emd = self.embedding(n_f)
         
         for layer in range(self.encoder_layer_num):
-            out = self.gat_layers[layer](emd, edge_index)
+            # GAT 레이어에 edge_attr 전달 (있으면)
+            if edge_attr is not None:
+                out = self.gat_layers[layer](emd, edge_index, edge_attr=edge_attr)
+            else:
+                out = self.gat_layers[layer](emd, edge_index)
             # Residual connection
             emd = self.relu(
                 self.concat_layers(torch.cat([out, emd], dim=1))
@@ -472,7 +481,7 @@ if __name__ == "__main__":
         'embedding_dim': 128,
         'num_head': 8,
         'num_encoder_layer': 3,
-        'input_dim': 10,
+        'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
         'gat_version': 'v2',
         'N_T': 3,
         'N_P': 3,
@@ -491,8 +500,8 @@ if __name__ == "__main__":
     N_P = 3
     num_nodes = num_activities + N_T + N_P
     
-    # 노드 feature (10차원)
-    x = torch.randn(num_nodes, 10)
+    # 노드 feature (8차원)
+    x = torch.randn(num_nodes, 8)
     
     # 엣지 (랜덤)
     edge_index = torch.randint(0, num_nodes, (2, 20))

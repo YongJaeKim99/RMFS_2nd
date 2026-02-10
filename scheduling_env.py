@@ -642,80 +642,123 @@ class SchedulingEnv:
         
         for b in range(self.batch_size):
             # ========================================
-            # 노드 피처 구성
+            # 노드 피처 구성 (패딩 방식)
             # ========================================
-            # Activity 노드: duration, project_id, started, completed, start_time (정규화됨)
-            # Team 노드: available_time (정규화됨)
-            # Project 노드: release_time, due_date, completion_time (정규화됨)
+            # 전체 노드 피처: 8차원
+            # Activity: [0:4] = [duration, started, ended, remaining_time], [4:8] = 0
+            # Team: [0:4] = 0, [4] = available_time, [5:8] = 0
+            # Project: [0:5] = 0, [5:8] = [release_time, due_date, completed]
             
             num_act = self.num_activities[b].item()
             num_nodes = num_act + self.N_T + self.N_P
             
-            # 노드 피처 초기화
-            node_features = torch.zeros(num_nodes, 10)  # 10차원 피처
+            # 노드 피처 초기화 (8차원, 모두 0으로 시작)
+            node_features = torch.zeros(num_nodes, 8)
             
-            # Activity 노드 (0 ~ num_act-1)
             # 정규화를 위한 시간 스케일
             max_time = max(1.0, self.sim_time[b].item() + 1.0)
+            max_duration = self.duration_max
             
+            # Activity 노드 (0 ~ num_act-1)
             for act_id in range(num_act):
                 idx = act_id
-                node_features[idx, 0] = self.activity_duration[b, act_id] / 10.0  # 정규화
-                node_features[idx, 1] = self.activity_project[b, act_id] / self.N_P
-                node_features[idx, 2] = float(self.activity_started[b, act_id])
-                node_features[idx, 3] = float(self.activity_ended[b, act_id])
-                if self.activity_started[b, act_id]:
-                    node_features[idx, 4] = self.activity_start_time[b, act_id] / max_time
+                # [0:4] 사용
+                node_features[idx, 0] = self.activity_duration[b, act_id] / max_duration  # duration
+                node_features[idx, 1] = float(self.activity_started[b, act_id])  # started
+                node_features[idx, 2] = float(self.activity_ended[b, act_id])  # ended
+                # remaining_time 계산
+                if self.activity_ended[b, act_id]:
+                    node_features[idx, 3] = 0.0  # 완료됨
+                elif self.activity_started[b, act_id]:
+                    # 진행 중: 남은 시간
+                    node_features[idx, 3] = self.activity_remaining_time[b, act_id] / max_duration
+                else:
+                    # 시작 안 함: duration 전체
+                    node_features[idx, 3] = self.activity_duration[b, act_id] / max_duration
+                # [4:8]은 이미 0으로 패딩됨
             
             # Team 노드 (num_act ~ num_act+N_T-1)
             for team_id in range(self.N_T):
                 idx = num_act + team_id
-                node_features[idx, 5] = self.team_available_time[b, team_id] / max_time
-                node_features[idx, 6] = float(self.team_current_activity[b, team_id] >= 0)
+                # [0:4]는 이미 0으로 패딩됨
+                # [4] 사용
+                node_features[idx, 4] = self.team_available_time[b, team_id] / max_time
+                # [5:8]은 이미 0으로 패딩됨
             
             # Project 노드 (num_act+N_T ~ num_act+N_T+N_P-1)
             for proj_id in range(self.N_P):
                 idx = num_act + self.N_T + proj_id
-                node_features[idx, 7] = self.project_release_time[b, proj_id] / max_time
-                node_features[idx, 8] = self.project_due_date[b, proj_id] / max_time
-                node_features[idx, 9] = float(self.project_completed[b, proj_id])
+                # [0:5]는 이미 0으로 패딩됨
+                # [5:8] 사용
+                node_features[idx, 5] = self.project_release_time[b, proj_id] / max_time
+                node_features[idx, 6] = self.project_due_date[b, proj_id] / max_time
+                node_features[idx, 7] = float(self.project_completed[b, proj_id])
             
             # ========================================
-            # 엣지 구성
+            # 엣지 구성 (edge_index + edge_attr)
             # ========================================
             edge_index_list = []
+            edge_attr_list = []
             
-            # 1. Activity → Activity (Precedence)
+            # 1. Activity → Activity (Precedence) - 엣지 피처 없음
+            num_precedence = 0
             for act_id in range(num_act):
                 predecessors = self.activity_predecessors[b, act_id]
                 for pred_id in predecessors:
                     if pred_id >= 0 and pred_id < num_act:
                         edge_index_list.append([pred_id, act_id])
+                        edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
+                        num_precedence += 1
             
-            # 2. Activity ↔ Activity (Mutex - 양방향)
+            # 2. Activity ↔ Activity (Mutex - 양방향) - 엣지 피처: is_ordered
+            num_mutex_start = len(edge_index_list)
             for act_id in range(num_act):
                 mutex_activities = self.activity_mutex[b, act_id]
                 for mutex_id in mutex_activities:
                     if mutex_id >= 0 and mutex_id < num_act and mutex_id > act_id:
+                        # 양방향 엣지 추가
+                        # is_ordered 계산: 둘 중 하나가 시작했으면 1, 아니면 0
+                        is_ordered = float(self.activity_started[b, act_id] or self.activity_started[b, mutex_id])
+                        
                         edge_index_list.append([act_id, mutex_id])
+                        edge_attr_list.append([is_ordered])
+                        
                         edge_index_list.append([mutex_id, act_id])
+                        edge_attr_list.append([is_ordered])
             
-            # 3. Activity → Team (Eligible)
+            # 3. Activity ↔ Team (Eligible - 양방향) - 엣지 피처: is_assigned
+            num_eligible_start = len(edge_index_list)
             for act_id in range(num_act):
                 eligible_teams = self.activity_eligible_teams[b, act_id]
                 for team_id in range(self.N_T):
                     if eligible_teams[team_id]:
+                        # is_assigned 계산: 이 activity가 이 team에 할당되었으면 1
+                        is_assigned = float(self.activity_assigned_team[b, act_id] == team_id)
+                        
+                        # 양방향 엣지 추가 (둘 다 동일한 is_assigned 값)
                         edge_index_list.append([act_id, num_act + team_id])
+                        edge_attr_list.append([is_assigned])
+                        
+                        edge_index_list.append([num_act + team_id, act_id])
+                        edge_attr_list.append([is_assigned])
             
-            # 4. Activity → Project (Belongs to)
+            # 4. Activity ↔ Project (Belongs-to - 양방향) - 엣지 피처 없음
+            num_belongs_start = len(edge_index_list)
             for act_id in range(num_act):
                 proj_id = self.activity_project[b, act_id].item()
+                # 양방향 엣지 추가
                 edge_index_list.append([act_id, num_act + self.N_T + proj_id])
+                edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
+                
+                edge_index_list.append([num_act + self.N_T + proj_id, act_id])
+                edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
             
             if edge_index_list:
                 edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+                edge_attr = torch.tensor(edge_attr_list, dtype=torch.float)
             else:
                 edge_index = torch.empty((2, 0), dtype=torch.long)
+                edge_attr = torch.empty((0, 1), dtype=torch.float)
             
             # ========================================
             # Action 마스크 (가능한 action만 True)
@@ -727,6 +770,7 @@ class SchedulingEnv:
             data = Data(
                 x=node_features,
                 edge_index=edge_index,
+                edge_attr=edge_attr,  # 엣지 피처 추가
                 mask=action_mask,  # Action 마스크
                 batch_idx=b,
                 num_activities=num_act,

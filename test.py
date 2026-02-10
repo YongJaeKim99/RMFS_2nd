@@ -134,7 +134,7 @@ if __name__ == "__main__":
         'embedding_dim': 128, 
         'num_head': 8,
         'num_encoder_layer': 3,
-        'input_dim': 10,
+        'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
     }
     
     # 옵티마이저 파라미터 설정
