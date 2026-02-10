@@ -38,6 +38,16 @@ class SchedulingModel(nn.Module):
         
         # GNN 모델
         self.gnn_model = GNNModel(self.model_params)
+    
+    def set_action_space(self, action_to_pair, max_action_space):
+        """
+        환경에서 생성한 action space 정보를 모델에 전달
+        
+        Args:
+            action_to_pair: (batch_size, max_action_space, 2) - action index → (activity, team) 매핑
+            max_action_space: int - 배치 내 최대 action space 크기
+        """
+        self.gnn_model.set_action_space(action_to_pair, max_action_space)
 
     def forward(self, state):
         """
@@ -257,6 +267,21 @@ class GNNModel(nn.Module):
         )
         
         self.relu = nn.ReLU()
+        
+        # Action space 정보 저장 (환경에서 초기화 시 설정됨)
+        self.action_to_pair_cache = None  # (batch_size, max_action_space, 2)
+        self.max_action_space = None
+    
+    def set_action_space(self, action_to_pair, max_action_space):
+        """
+        환경에서 생성한 action space 정보를 모델에 저장
+        
+        Args:
+            action_to_pair: (batch_size, max_action_space, 2) - action index → (activity, team) 매핑
+            max_action_space: int - 배치 내 최대 action space 크기
+        """
+        self.action_to_pair_cache = action_to_pair
+        self.max_action_space = max_action_space
 
     def forward(self, n_f, edge_index, state):
         """
@@ -268,7 +293,7 @@ class GNNModel(nn.Module):
             state: 전체 state 객체 (Batch 또는 list)
         
         Returns:
-            action_logits: (total_actions,) - action logit
+            action_logits: (total_actions,) - action logit (eligible한 조합만)
         """
         # (1) Encoder: 노드 임베딩 생성
         emd = self.embedding(n_f)
@@ -281,7 +306,7 @@ class GNNModel(nn.Module):
             )
         
         # (2) Decoder: 액션 logit 계산
-        # Action: (Activity, Team) 페어
+        # Action: (Activity, Team) 페어 - eligible한 조합만 처리
         
         # 환경 파라미터
         N_T = self.model_params.get('N_T', 4)
@@ -309,6 +334,17 @@ class GNNModel(nn.Module):
             else:
                 num_activities_list = [0] * num_graphs
             
+            # action_to_pair 정보 추출 (캐시 우선, 없으면 state에서)
+            action_to_pair_list = None
+            if self.action_to_pair_cache is not None:
+                action_to_pair_list = self.action_to_pair_cache
+            elif hasattr(state, 'action_to_pair'):
+                action_to_pair_list = state.action_to_pair
+                # 첫 forward 시 캐시에 저장
+                self.action_to_pair_cache = action_to_pair_list
+                if hasattr(state, 'mask') and isinstance(state.mask, torch.Tensor):
+                    self.max_action_space = state.mask.shape[0] if state.mask.dim() == 1 else state.mask.shape[1]
+            
             # 각 그래프별로 처리
             for b_idx in range(num_graphs):
                 # 이 배치에 속하는 노드들
@@ -323,17 +359,45 @@ class GNNModel(nn.Module):
                 act_embeddings = graph_emd[:num_act, :]  # (num_act, D)
                 team_embeddings = graph_emd[num_act:num_act+N_T, :]  # (N_T, D)
                 
-                # 모든 가능한 (Activity, Team) 페어의 임베딩 생성
-                act_emb_expanded = act_embeddings.unsqueeze(1).expand(-1, N_T, -1)  # (num_act, N_T, D)
-                team_emb_expanded = team_embeddings.unsqueeze(0).expand(num_act, -1, -1)  # (num_act, N_T, D)
-                
-                # Concat: (num_act, N_T, 2*D)
-                action_decode_emb = torch.cat([act_emb_expanded, team_emb_expanded], dim=2)
-                action_decode_emb = action_decode_emb.reshape(-1, 2 * self.embedding_dim)  # (num_act*N_T, 2*D)
-                
-                # Action logits 계산
-                logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_act*N_T,)
-                action_logits_list.append(logits_b)
+                # Eligible한 (Activity, Team) 페어만 처리
+                if action_to_pair_list is not None:
+                    action_to_pair = action_to_pair_list[b_idx]  # (max_action_space, 2)
+                    
+                    # 유효한 action만 선택 (패딩 제외)
+                    valid_mask = action_to_pair[:, 0] >= 0
+                    valid_actions = action_to_pair[valid_mask]  # (num_valid_actions, 2)
+                    
+                    # 각 eligible action에 대한 임베딩 생성
+                    action_embeddings = []
+                    for act_id, team_id in valid_actions:
+                        act_emb = act_embeddings[act_id]  # (D,)
+                        team_emb = team_embeddings[team_id]  # (D,)
+                        action_emb = torch.cat([act_emb, team_emb], dim=0)  # (2*D,)
+                        action_embeddings.append(action_emb)
+                    
+                    if len(action_embeddings) > 0:
+                        action_decode_emb = torch.stack(action_embeddings)  # (num_valid_actions, 2*D)
+                        logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_valid_actions,)
+                        
+                        # 패딩된 action에 대해서는 매우 작은 값으로 채움
+                        max_action_space = action_to_pair.shape[0]
+                        full_logits = torch.full((max_action_space,), -1e9, device=logits_b.device, dtype=logits_b.dtype)
+                        full_logits[valid_mask] = logits_b
+                        action_logits_list.append(full_logits)
+                    else:
+                        # 유효한 action이 없는 경우
+                        max_action_space = action_to_pair.shape[0]
+                        action_logits_list.append(torch.full((max_action_space,), -1e9, device=emd.device))
+                else:
+                    # action_to_pair 정보가 없으면 기존 방식 사용 (모든 조합)
+                    act_emb_expanded = act_embeddings.unsqueeze(1).expand(-1, N_T, -1)  # (num_act, N_T, D)
+                    team_emb_expanded = team_embeddings.unsqueeze(0).expand(num_act, -1, -1)  # (num_act, N_T, D)
+                    
+                    action_decode_emb = torch.cat([act_emb_expanded, team_emb_expanded], dim=2)
+                    action_decode_emb = action_decode_emb.reshape(-1, 2 * self.embedding_dim)  # (num_act*N_T, 2*D)
+                    
+                    logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_act*N_T,)
+                    action_logits_list.append(logits_b)
         
         else:
             # List인 경우 (get_action에서 DataLoader를 거친 경우)
@@ -349,17 +413,45 @@ class GNNModel(nn.Module):
                 act_embeddings = emd[node_start:node_start+num_act, :]  # (num_act, D)
                 team_embeddings = emd[node_start+num_act:node_start+num_act+N_T, :]  # (N_T, D)
                 
-                # 모든 가능한 (Activity, Team) 페어의 임베딩 생성
-                act_emb_expanded = act_embeddings.unsqueeze(1).expand(-1, N_T, -1)  # (num_act, N_T, D)
-                team_emb_expanded = team_embeddings.unsqueeze(0).expand(num_act, -1, -1)  # (num_act, N_T, D)
-                
-                # Concat: (num_act, N_T, 2*D)
-                action_decode_emb = torch.cat([act_emb_expanded, team_emb_expanded], dim=2)
-                action_decode_emb = action_decode_emb.reshape(-1, 2 * self.embedding_dim)  # (num_act*N_T, 2*D)
-                
-                # Action logits 계산
-                logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_act*N_T,)
-                action_logits_list.append(logits_b)
+                # Eligible한 (Activity, Team) 페어만 처리
+                if hasattr(state[b_idx], 'action_to_pair'):
+                    action_to_pair = state[b_idx].action_to_pair  # (max_action_space, 2)
+                    
+                    # 유효한 action만 선택 (패딩 제외)
+                    valid_mask = action_to_pair[:, 0] >= 0
+                    valid_actions = action_to_pair[valid_mask]  # (num_valid_actions, 2)
+                    
+                    # 각 eligible action에 대한 임베딩 생성
+                    action_embeddings = []
+                    for act_id, team_id in valid_actions:
+                        act_emb = act_embeddings[act_id]  # (D,)
+                        team_emb = team_embeddings[team_id]  # (D,)
+                        action_emb = torch.cat([act_emb, team_emb], dim=0)  # (2*D,)
+                        action_embeddings.append(action_emb)
+                    
+                    if len(action_embeddings) > 0:
+                        action_decode_emb = torch.stack(action_embeddings)  # (num_valid_actions, 2*D)
+                        logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_valid_actions,)
+                        
+                        # 패딩된 action에 대해서는 매우 작은 값으로 채움
+                        max_action_space = action_to_pair.shape[0]
+                        full_logits = torch.full((max_action_space,), -1e9, device=logits_b.device, dtype=logits_b.dtype)
+                        full_logits[valid_mask] = logits_b
+                        action_logits_list.append(full_logits)
+                    else:
+                        # 유효한 action이 없는 경우
+                        max_action_space = action_to_pair.shape[0]
+                        action_logits_list.append(torch.full((max_action_space,), -1e9, device=emd.device))
+                else:
+                    # action_to_pair 정보가 없으면 기존 방식 사용 (모든 조합)
+                    act_emb_expanded = act_embeddings.unsqueeze(1).expand(-1, N_T, -1)  # (num_act, N_T, D)
+                    team_emb_expanded = team_embeddings.unsqueeze(0).expand(num_act, -1, -1)  # (num_act, N_T, D)
+                    
+                    action_decode_emb = torch.cat([act_emb_expanded, team_emb_expanded], dim=2)
+                    action_decode_emb = action_decode_emb.reshape(-1, 2 * self.embedding_dim)  # (num_act*N_T, 2*D)
+                    
+                    logits_b = self.action_layers(action_decode_emb).squeeze(-1)  # (num_act*N_T,)
+                    action_logits_list.append(logits_b)
         
         # 모든 배치의 logits를 concat
         action_logits = torch.cat(action_logits_list, dim=0)

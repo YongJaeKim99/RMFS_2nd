@@ -22,24 +22,41 @@ print("Using device:", device)
 
 if __name__ == "__main__":
     # =================================================================
+    # 🎯 프로젝트 루트 경로 설정
+    # =================================================================
+    project_root = Path(__file__).parent
+    
+    # =================================================================
     # 🎯 테스트 파라미터 설정
     # =================================================================
     
     # -----------------------------
-    # 1) 경로 설정 및 체크포인트 선택 옵션
+    # 1) 체크포인트 설정
     # -----------------------------
-    project_root = Path(__file__).parent 
-    ckpt_dir = project_root / "checkpoints/20260209_120000_tardiness_REINFORCE"  # 예시
+    # 체크포인트 폴더 이름 (checkpoints/ 아래의 폴더명)
+    # 예: "20260210_130751_tardiness_REINFORCE"
+    CHECKPOINT_FOLDER = "20260210_130751_tardiness_REINFORCE"
     
-    # 모든 체크포인트에 대해 실험할지 여부 (True: 모든 체크포인트, False: 특정 체크포인트만)
-    TEST_ALL_CHECKPOINTS = True
+    # 특정 체크포인트 파일 이름 (None이면 자동 선택)
+    # 예: "scheduling_epoch100.pt" 또는 None
+    CHECKPOINT_FILE = "pomo_rss_epoch25.pt"
     
-    # 디버그 모드 설정
-    DEBUG_ENV = False
-    DEBUG_MODEL = False
+    # 모든 체크포인트에 대해 실험할지 여부
+    # True: 폴더 내 모든 체크포인트 테스트
+    # False: 가장 최신 체크포인트만 테스트 (또는 CHECKPOINT_FILE 지정 시 해당 파일만)
+    TEST_ALL_CHECKPOINTS = False
     
-    # 시드 고정
-    SEED = 42
+    # -----------------------------
+    # 2) 테스트할 알고리즘 설정
+    # -----------------------------
+    # RL: 학습된 GNN 모델 사용
+    # GA: 유전 알고리즘 (GA.py)
+    test_algorithms = ["RL", "GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    
+    # GA 설정
+    GA_POPULATION_SIZE = 100
+    GA_GENERATIONS = 300
+    GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
     
     # =================================================================
     # 🎯 목적함수 선택
@@ -53,19 +70,17 @@ if __name__ == "__main__":
     
     # 테스트 데이터 파일 범위 설정
     TEST_FILE_START = 0
-    TEST_FILE_END = 10
+    TEST_FILE_END = 29
     
     # -----------------------------
-    # 2) 테스트할 알고리즘 설정
+    # 3) 기타 설정
     # -----------------------------
-    # RL: 학습된 GNN 모델 사용
-    # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["GA", "RL"]
+    # 디버그 모드 설정
+    DEBUG_ENV = False
+    DEBUG_MODEL = False
     
-    # GA 설정
-    GA_POPULATION_SIZE = 100
-    GA_GENERATIONS = 300
-    GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
+    # 시드 고정
+    SEED = 0
     
     # 시드 고정 (재현성 보장)
     if SEED is not None:
@@ -95,7 +110,7 @@ if __name__ == "__main__":
     # =================================================================
     
     # -----------------------------
-    # 3) 파라미터 설정
+    # 4) 파라미터 설정
     # -----------------------------
     env_params = {
         'batch_size': 1,  # 테스트 시 배치 크기
@@ -150,7 +165,7 @@ if __name__ == "__main__":
         os.makedirs('./checkpoints')
     
     # -----------------------------
-    # 4) 유틸 함수: 결과를 엑셀로 저장
+    # 5) 유틸 함수: 결과를 엑셀로 저장
     # -----------------------------
     current_dir = Path(__file__).parent
     results_dir = current_dir / "results"
@@ -228,21 +243,75 @@ if __name__ == "__main__":
         return output_path
     
     # -----------------------------
-    # 5) 데이터 경로 설정
+    # 6) 데이터 경로 설정
     # -----------------------------
     if TEST_DATA_TYPE == 'val':
-        data_base_dir = project_root / "generated_datasets" / "data_val"
+        data_base_dir = project_root / "data" / "val"
     else:
-        data_base_dir = project_root / "generated_datasets" / "data_test"
+        data_base_dir = project_root / "data" / "test"
     
-    print(f"데이터 경로: {data_base_dir}")
+    print(f"📂 데이터 경로: {data_base_dir}")
+    
+    # 데이터 폴더가 없으면 경고
+    if not data_base_dir.exists():
+        print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
+        print(f"   {TEST_DATA_TYPE} 데이터를 먼저 생성해주세요.")
+        if TEST_DATA_TYPE == 'val':
+            print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
+        exit(1)
+    
+    # 데이터 파일 찾기
+    if TEST_DATA_TYPE == 'val':
+        # Validation 데이터는 파일명 패턴이 다름
+        n_p = env_params['N_P']
+        n_t = env_params['N_T']
+        n_a_min = env_params['N_A_min']
+        n_a_max = env_params['N_A_max']
+        validation_seed = 2025
+        
+        val_pattern = f"val_{OBJECTIVE}_P{n_p}_T{n_t}_A{n_a_min}-{n_a_max}_bs*_seed{validation_seed}.pickle"
+        val_files = list(data_base_dir.glob(val_pattern))
+        
+        if not val_files:
+            print(f"⚠️  경고: Validation 데이터 파일을 찾을 수 없습니다.")
+            print(f"   패턴: {val_pattern}")
+            print(f"   경로: {data_base_dir}")
+            print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
+            exit(1)
+        
+        # 첫 번째 매칭 파일 사용
+        test_data_path = val_files[0]
+        print(f"📄 Validation 데이터 파일: {test_data_path.name}")
+        
+        # 단일 파일 모드 (파일 번호 사용 안 함)
+        USE_SINGLE_FILE = True
+    else:
+        # Test 데이터는 번호별 파일 (i.pickle)
+        test_data_path = None
+        USE_SINGLE_FILE = False
+        print(f"📄 Test 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     
     # -----------------------------
-    # 6) 체크포인트 로드 (RL 테스트가 있을 때만)
+    # 7) 체크포인트 로드 (RL 테스트가 있을 때만)
     # -----------------------------
+    ckpt_dir = project_root / "checkpoints" / CHECKPOINT_FOLDER
+    
     all_ckpts = []
     if "RL" in test_algorithms:
-        if TEST_ALL_CHECKPOINTS and ckpt_dir.exists():
+        if not ckpt_dir.exists():
+            print(f"[WARNING] Checkpoint directory does not exist: {ckpt_dir}")
+            print(f"[INFO] RL 테스트를 건너뜁니다.")
+        elif CHECKPOINT_FILE is not None:
+            # 특정 체크포인트 파일 지정
+            ckpt_path = ckpt_dir / CHECKPOINT_FILE
+            if ckpt_path.exists():
+                all_ckpts = [ckpt_path]
+                print(f"[INFO] Using specified checkpoint: {CHECKPOINT_FILE}")
+            else:
+                print(f"[WARNING] Specified checkpoint file not found: {ckpt_path}")
+                print(f"[INFO] RL 테스트를 건너뜁니다.")
+        elif TEST_ALL_CHECKPOINTS:
+            # 모든 체크포인트 테스트
             all_ckpts = sorted(
                 ckpt_dir.glob("scheduling_epoch*.pt"),
                 key=lambda p: int(p.stem.replace('scheduling_epoch', ''))
@@ -252,21 +321,21 @@ if __name__ == "__main__":
                 print(f"[INFO] RL 테스트를 건너뜁니다.")
             else:
                 print(f"[INFO] Found {len(all_ckpts)} checkpoints: {[ckpt.name for ckpt in all_ckpts]}")
-        elif ckpt_dir.exists():
+        else:
+            # 가장 최신 체크포인트만 테스트
             ckpts = sorted(
                 ckpt_dir.glob("scheduling_epoch*.pt"),
                 key=lambda p: int(p.stem.replace('scheduling_epoch', ''))
             )
             if ckpts:
                 all_ckpts = [ckpts[-1]]  # 가장 최신 체크포인트만
-                print(f"[INFO] Using single checkpoint: {all_ckpts[0].name}")
+                print(f"[INFO] Using latest checkpoint: {all_ckpts[0].name}")
             else:
                 print(f"[WARNING] No checkpoints found in {ckpt_dir}")
-        else:
-            print(f"[WARNING] Checkpoint directory does not exist: {ckpt_dir}")
+                print(f"[INFO] RL 테스트를 건너뜁니다.")
     
     # -----------------------------
-    # 7) 알고리즘별 실험 실행
+    # 8) 알고리즘별 실험 실행
     # -----------------------------
     algorithm_summaries = {}
     saved_files = []
@@ -279,28 +348,99 @@ if __name__ == "__main__":
         
         ga_results = []
         
-        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-            data_path = data_base_dir / f"{i}.pickle"
-            if not data_path.exists():
-                print(f"Warning: Data file not found: {data_path}")
-                continue
-            
-            print(f"\n📋 테스트 파일 {i}.pickle")
-            
-            start_time = time.time()
+        if USE_SINGLE_FILE:
+            # Validation 모드: 단일 파일에서 모든 배치 처리
+            print(f"\n📋 테스트 파일: {test_data_path.name}")
             
             try:
                 # 테스트 데이터 로드
-                with open(data_path, 'rb') as fr:
+                with open(test_data_path, 'rb') as fr:
                     problem = pickle.load(fr)
                 
-                print(f"   테스트 데이터 로드: {data_path}")
+                print(f"   ✅ 데이터 로드 완료: {test_data_path.name}")
                 
-                # pickle 데이터에서 프로젝트 정보 추출
-                # batch_projects와 batch_activities 사용
-                if 'batch_projects' in problem and 'batch_activities' in problem:
-                    # 첫 번째 배치의 프로젝트 사용 (테스트는 배치 크기 1)
-                    projects = problem['batch_projects'][0] if isinstance(problem['batch_projects'], list) else problem['batch_projects']
+                # Validation 데이터의 배치 크기 확인
+                batch_size = problem['num_activities'].shape[0] if 'num_activities' in problem else 0
+                print(f"   📊 총 배치 수: {batch_size}")
+                
+                # 각 배치를 개별 인스턴스로 처리
+                for batch_idx in range(min(batch_size, TEST_FILE_END - TEST_FILE_START + 1)):
+                    instance_num = TEST_FILE_START + batch_idx
+                    print(f"\n   🔄 처리 중: Batch {batch_idx} (Instance {instance_num})")
+                    
+                    start_time = time.time()
+                    
+                    try:
+                        # 단일 배치 추출을 위한 환경 생성 및 GA 변환
+                        from data_generator import convert_problem_to_ga_format
+                        
+                        # 환경 생성 (단일 배치)
+                        single_env_params = env_params.copy()
+                        single_env_params['batch_size'] = 1
+                        temp_env = SchedulingEnv(single_env_params, debug_env=False)
+                        temp_env._reset(problem)
+                        
+                        # batch_idx에 해당하는 데이터만 추출
+                        projects = convert_problem_to_ga_format(problem, batch_idx, env_params['N_T'])
+                        
+                        # GA 실행
+                        ga = GeneticAlgorithm(
+                            projects=projects,
+                            num_teams=env_params['N_T'],
+                            population_size=GA_POPULATION_SIZE,
+                            generations=GA_GENERATIONS,
+                            decode_mode=GA_DECODE_MODE
+                        )
+                        best_solution = ga.evolve()
+                        objective_value = best_solution.objective
+                        
+                        end_time = time.time()
+                        runtime = end_time - start_time
+                        
+                        result = {
+                            'algorithm': 'GA',
+                            'instance': instance_num,
+                            'objective_value': objective_value,
+                            'runtime': runtime
+                        }
+                        ga_results.append(result)
+                        
+                        print(f"      [GA][Instance {instance_num}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
+                    
+                    except Exception as e:
+                        print(f"      ❌ [GA][Instance {instance_num}] 실행 중 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
+            
+            except Exception as e:
+                print(f"❌ 데이터 로드 실패: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        else:
+            # Test 모드: 번호별 개별 파일 처리
+            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+                data_path = data_base_dir / f"{i}.pickle"
+                if not data_path.exists():
+                    print(f"⚠️  Warning: Data file not found: {data_path}")
+                    continue
+                
+                print(f"\n📋 테스트 파일 {i}.pickle")
+                
+                start_time = time.time()
+                
+                try:
+                    # 테스트 데이터 로드
+                    with open(data_path, 'rb') as fr:
+                        problem = pickle.load(fr)
+                    
+                    print(f"   ✅ 테스트 데이터 로드: {data_path}")
+                    
+                    # pickle 데이터를 GA 형식으로 변환
+                    from data_generator import convert_problem_to_ga_format
+                    
+                    projects = convert_problem_to_ga_format(problem, 0, env_params['N_T'])
                     
                     # GA 실행
                     ga = GeneticAlgorithm(
@@ -312,28 +452,25 @@ if __name__ == "__main__":
                     )
                     best_solution = ga.evolve()
                     objective_value = best_solution.objective
-                else:
-                    print("   ⚠️  경고: pickle 데이터에 'batch_projects'가 없습니다.")
-                    objective_value = 0.0
+                    
+                    end_time = time.time()
+                    runtime = end_time - start_time
+                    
+                    result = {
+                        'algorithm': 'GA',
+                        'instance': i,
+                        'objective_value': objective_value,
+                        'runtime': runtime
+                    }
+                    ga_results.append(result)
+                    
+                    print(f"   [GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
                 
-                end_time = time.time()
-                runtime = end_time - start_time
-                
-                result = {
-                    'algorithm': 'GA',
-                    'instance': i,
-                    'objective_value': objective_value,
-                    'runtime': runtime
-                }
-                ga_results.append(result)
-                
-                print(f"[GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
-            
-            except Exception as e:
-                print(f"❌ [GA][Instance {i}] 실행 중 오류: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
+                except Exception as e:
+                    print(f"   ❌ [GA][Instance {i}] 실행 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
         
         # GA 결과 저장
         if ga_results:
@@ -361,81 +498,159 @@ if __name__ == "__main__":
         try:
             checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
             
-            # TODO: 모델 로드 (모델 추가 후 주석 해제)
-            # if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            #     trainer.model.load_state_dict(checkpoint['model_state_dict'])
-            #     print(f"✅ RL 모델 로드 완료: {checkpoint_name}")
-            # else:
-            #     trainer.model.load_state_dict(checkpoint)
-            #     print(f"✅ RL 모델 로드 완료 (이전 형식): {checkpoint_name}")
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                trainer.model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"✅ RL 모델 로드 완료: {checkpoint_name}")
+            else:
+                trainer.model.load_state_dict(checkpoint)
+                print(f"✅ RL 모델 로드 완료 (이전 형식): {checkpoint_name}")
             
-            # trainer.model.to(device)
-            # trainer.model.eval()
+            trainer.model.to(device)
+            trainer.model.eval()
             
-            print("⚠️  경고: GNN 모델이 없어 체크포인트 로드를 건너뜁니다.")
         except Exception as e:
             print(f"❌ RL 모델 로드 실패: {e}")
+            import traceback
+            traceback.print_exc()
             continue
         
         rl_results = []
         
-        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-            data_path = data_base_dir / f"{i}.pickle"
-            if not data_path.exists():
-                print(f"Warning: Data file not found: {data_path}")
-                continue
-            
-            print(f"\n📋 테스트 파일 {i}.pickle")
-            
-            start_time = time.time()
+        if USE_SINGLE_FILE:
+            # Validation 모드: 단일 파일에서 모든 배치 처리
+            print(f"\n📋 테스트 파일: {test_data_path.name}")
             
             try:
-                # TODO: GNN 모델 추가 후 RL 테스트 구현
-                print("   ⚠️  경고: GNN 모델이 없어 RL 테스트를 건너뜁니다.")
-                print("   GNN 모델(SchedulingModel) 추가 후 RL 테스트를 구현하세요.")
+                # 테스트 데이터 로드
+                with open(test_data_path, 'rb') as fr:
+                    problem = pickle.load(fr)
                 
-                # 예시: RL 테스트 (모델 추가 후 주석 해제)
-                # with torch.no_grad():
-                #     # 테스트 데이터 로드
-                #     with open(data_path, 'rb') as fr:
-                #         problem = pickle.load(fr)
-                #     
-                #     # 환경 초기화
-                #     test_env = SchedulingEnv(env_params, debug_env=False)
-                #     test_env._reset(problem)
-                #     
-                #     done = False
-                #     s = test_env._get_state()
-                #     
-                #     while not done.all():
-                #         action = trainer.model.get_max_action(s)
-                #         s, reward, done = test_env.step(action.to('cpu'))
-                #     
-                #     test_score = test_env.get_objective()
-                #     if isinstance(test_score, torch.Tensor):
-                #         test_score = test_score.mean().item()
+                print(f"   ✅ 데이터 로드 완료: {test_data_path.name}")
                 
-                # 임시: 더미 결과
-                test_score = 0.0
+                # Validation 데이터의 배치 크기 확인
+                batch_size = problem['num_activities'].shape[0] if 'num_activities' in problem else 0
+                print(f"   📊 총 배치 수: {batch_size}")
                 
-                end_time = time.time()
-                runtime = end_time - start_time
-                
-                result = {
-                    'algorithm': 'RL',
-                    'instance': i,
-                    'objective_value': test_score,
-                    'runtime': runtime
-                }
-                rl_results.append(result)
-                
-                print(f"[RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
+                # 각 배치를 개별 인스턴스로 처리
+                for batch_idx in range(min(batch_size, TEST_FILE_END - TEST_FILE_START + 1)):
+                    instance_num = TEST_FILE_START + batch_idx
+                    print(f"\n   🔄 처리 중: Batch {batch_idx} (Instance {instance_num})")
+                    
+                    start_time = time.time()
+                    
+                    try:
+                        with torch.no_grad():
+                            # 단일 배치 환경 생성
+                            single_env_params = env_params.copy()
+                            single_env_params['batch_size'] = 1
+                            test_env = SchedulingEnv(single_env_params, debug_env=False)
+                            
+                            # 전체 problem에서 batch_idx만 추출하여 단일 배치 문제 생성
+                            single_problem = {}
+                            for key, value in problem.items():
+                                if isinstance(value, torch.Tensor) and value.shape[0] == batch_size:
+                                    single_problem[key] = value[batch_idx:batch_idx+1]
+                                else:
+                                    single_problem[key] = value
+                            
+                            test_env._reset(single_problem)
+                            
+                            # 모델에 action space 정보 전달
+                            action_to_pair, max_action_space = test_env.get_action_space_info()
+                            trainer.model.set_action_space(action_to_pair, max_action_space)
+                            
+                            done = False
+                            s = test_env._get_state()
+                            
+                            while not done:
+                                action = trainer.model.get_max_action(s)
+                                s, obj_value, done = test_env.step(action.to('cpu'))
+                            
+                            test_score = test_env.get_objective()
+                            if isinstance(test_score, torch.Tensor):
+                                test_score = test_score.mean().item()
+                        
+                        end_time = time.time()
+                        runtime = end_time - start_time
+                        
+                        result = {
+                            'algorithm': 'RL',
+                            'instance': instance_num,
+                            'objective_value': test_score,
+                            'runtime': runtime
+                        }
+                        rl_results.append(result)
+                        
+                        print(f"      [RL][Instance {instance_num}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
+                    
+                    except Exception as e:
+                        print(f"      ❌ [RL][Instance {instance_num}] 실행 중 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
             
             except Exception as e:
-                print(f"❌ [RL][Instance {i}] 실행 중 오류: {e}")
+                print(f"❌ 데이터 로드 실패: {e}")
                 import traceback
                 traceback.print_exc()
-                continue
+        
+        else:
+            # Test 모드: 번호별 개별 파일 처리
+            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+                data_path = data_base_dir / f"{i}.pickle"
+                if not data_path.exists():
+                    print(f"⚠️  Warning: Data file not found: {data_path}")
+                    continue
+                
+                print(f"\n📋 테스트 파일 {i}.pickle")
+                
+                start_time = time.time()
+                
+                try:
+                    with torch.no_grad():
+                        # 테스트 데이터 로드
+                        with open(data_path, 'rb') as fr:
+                            problem = pickle.load(fr)
+                        
+                        print(f"   ✅ 테스트 데이터 로드: {data_path}")
+                        
+                        # 환경 초기화
+                        test_env = SchedulingEnv(env_params, debug_env=False)
+                        test_env._reset(problem)
+                        
+                        # 모델에 action space 정보 전달
+                        action_to_pair, max_action_space = test_env.get_action_space_info()
+                        trainer.model.set_action_space(action_to_pair, max_action_space)
+                        
+                        done = False
+                        s = test_env._get_state()
+                        
+                        while not done:
+                            action = trainer.model.get_max_action(s)
+                            s, obj_value, done = test_env.step(action.to('cpu'))
+                        
+                        test_score = test_env.get_objective()
+                        if isinstance(test_score, torch.Tensor):
+                            test_score = test_score.mean().item()
+                    
+                    end_time = time.time()
+                    runtime = end_time - start_time
+                    
+                    result = {
+                        'algorithm': 'RL',
+                        'instance': i,
+                        'objective_value': test_score,
+                        'runtime': runtime
+                    }
+                    rl_results.append(result)
+                    
+                    print(f"   [RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
+                
+                except Exception as e:
+                    print(f"   ❌ [RL][Instance {i}] 실행 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
         
         # RL 결과 저장
         if rl_results:
@@ -450,7 +665,7 @@ if __name__ == "__main__":
                 saved_files.append(output_path)
     
     # -----------------------------
-    # 8) 전체 결과 요약
+    # 9) 전체 결과 요약
     # -----------------------------
     if algorithm_summaries:
         print(f"\n{'='*60}")

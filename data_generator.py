@@ -189,6 +189,7 @@ def generate_scheduling_data_batch(env_params):
         'N_T': N_T,
         'batch_size': batch_size,
         'pomo_size': pomo_size,
+        'objective': env_params.get('objective', 'tardiness'),
     }
     
     problem = {
@@ -254,6 +255,79 @@ def print_problem_summary(problem):
         print(f"  - Mutually exclusive pairs: {num_mutex}")
     
     print("=" * 60 + "\n")
+
+
+def convert_problem_to_ga_format(problem, batch_idx, num_teams):
+    """
+    Pickle 데이터를 GA (유전 알고리즘) 형식으로 변환
+    
+    Args:
+        problem: generate_scheduling_data_batch()로 생성된 pickle 데이터
+        batch_idx: 추출할 배치 인덱스
+        num_teams: 팀 수
+    
+    Returns:
+        List[Project]: GA.py의 Project 객체 리스트
+    """
+    from GA import Project as GAProject, Activity as GAActivity
+    
+    # 배치 데이터 추출
+    activity_duration = problem['activity_duration'][batch_idx]  # (max_N_A,)
+    activity_project = problem['activity_project'][batch_idx]  # (max_N_A,)
+    activity_eligible_teams = problem['activity_eligible_teams'][batch_idx]  # (max_N_A, N_T)
+    activity_predecessors = problem['activity_predecessors'][batch_idx]  # (max_N_A, max_preds)
+    activity_mutex = problem['activity_mutex'][batch_idx]  # (max_N_A, max_mutex)
+    project_release_time = problem['project_release_time'][batch_idx]  # (N_P,)
+    project_due_date = problem['project_due_date'][batch_idx]  # (N_P,)
+    num_activities = problem['num_activities'][batch_idx].item()  # 실제 activity 수
+    
+    N_P = project_release_time.shape[0]
+    
+    # 프로젝트별로 Activity 그룹화
+    ga_projects = []
+    
+    for p in range(N_P):
+        # 이 프로젝트에 속한 activity 찾기
+        proj_mask = (activity_project[:num_activities] == p)
+        proj_activity_ids = proj_mask.nonzero(as_tuple=False).squeeze(-1).tolist()
+        
+        if not proj_activity_ids:
+            continue
+        
+        # GA Activity 생성
+        ga_activities = []
+        for act_id in proj_activity_ids:
+            # Eligible teams 추출
+            eligible_teams = activity_eligible_teams[act_id].nonzero(as_tuple=False).squeeze(-1).tolist()
+            
+            # Predecessors 추출 (유효한 것만)
+            predecessors = activity_predecessors[act_id]
+            valid_preds = predecessors[predecessors >= 0].tolist()
+            
+            # Mutex activities 추출 (유효한 것만)
+            mutex_activities = activity_mutex[act_id]
+            valid_mutex = mutex_activities[mutex_activities >= 0].tolist()
+            
+            ga_activity = GAActivity(
+                id=act_id,
+                project_id=p,
+                duration=int(activity_duration[act_id].item()),
+                eligible_teams=eligible_teams,
+                predecessors=valid_preds,
+                mutually_exclusive=valid_mutex
+            )
+            ga_activities.append(ga_activity)
+        
+        # GA Project 생성
+        ga_project = GAProject(
+            id=p,
+            activities=ga_activities,
+            release_time=int(project_release_time[p].item()),
+            due_date=int(project_due_date[p].item())
+        )
+        ga_projects.append(ga_project)
+    
+    return ga_projects
 
 
 if __name__ == "__main__":

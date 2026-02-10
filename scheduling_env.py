@@ -108,11 +108,18 @@ class SchedulingEnv:
         
         # Dynamic
         self.activity_started = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool)  # 시작 여부
-        self.activity_completed = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool)  # 완료 여부
+        self.activity_ended = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool)  # 종료 여부
         self.activity_start_time = torch.full((self.batch_size, self.max_N_A), -1.0)  # 시작 시간 (절대 시간)
         self.activity_end_time = torch.full((self.batch_size, self.max_N_A), -1.0)  # 종료 시간 (절대 시간)
         self.activity_remaining_time = torch.zeros(self.batch_size, self.max_N_A)  # 남은 시간 (상대 시간)
         self.activity_assigned_team = torch.full((self.batch_size, self.max_N_A), -1, dtype=torch.long)  # 할당된 팀
+        
+        # 패딩된 activity들은 started와 ended를 True로 설정
+        for b in range(self.batch_size):
+            num_act = self.num_activities[b].item()
+            if num_act < self.max_N_A:
+                self.activity_started[b, num_act:] = True
+                self.activity_ended[b, num_act:] = True
         
         # ========================================
         # Project 상태 (Static + Dynamic)
@@ -139,10 +146,13 @@ class SchedulingEnv:
         self.done = torch.zeros(self.batch_size, dtype=torch.bool)  # 종료 여부
         
         # ========================================
-        # 가능한 액션 (Action Mask)
+        # 가능한 액션 (Action Mask) - Eligible 기반
         # ========================================
-        # (batch_size, max_N_A, N_T) - 가능한 (activity, team) 페어는 True
-        self.available_actions = torch.zeros(self.batch_size, self.max_N_A, self.N_T, dtype=torch.bool)
+        # Action space 초기화: eligible한 (activity, team) 조합만 고려
+        self._initialize_action_space()
+        
+        # (batch_size, max_action_space) - 가능한 action은 True
+        self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool)
         
         # ========================================
         # 디버깅 정보
@@ -166,6 +176,52 @@ class SchedulingEnv:
         # 초기 가능한 액션 업데이트
         # ========================================
         self._update_available_actions(self.BATCH_IDX)
+    
+    def _initialize_action_space(self):
+        """
+        각 배치별로 eligible한 (activity, team) 조합만 추출하여 action space 구성
+        배치 내 최대 action space 크기에 맞춰 패딩 적용
+        """
+        # 각 배치별로 eligible한 action 목록 생성
+        action_space_sizes = []
+        action_mappings = []  # 각 배치의 (action_idx → (activity, team)) 매핑
+        
+        for b in range(self.batch_size):
+            eligible_actions = []  # [(activity_id, team_id), ...]
+            num_act = self.num_activities[b].item()
+            
+            for act_id in range(num_act):
+                # 해당 activity의 eligible teams 찾기
+                eligible_teams = self.activity_eligible_teams[b, act_id]  # (N_T,)
+                eligible_team_ids = eligible_teams.nonzero(as_tuple=False).squeeze(-1)  # eligible한 team ID들
+                
+                for team_id in eligible_team_ids:
+                    eligible_actions.append((act_id, team_id.item()))
+            
+            action_space_sizes.append(len(eligible_actions))
+            action_mappings.append(eligible_actions)
+        
+        # 배치 내 최대 action space 크기
+        self.max_action_space = max(action_space_sizes)
+        
+        # Action index → (activity, team) 매핑 텐서 생성 (패딩 포함)
+        # shape: (batch_size, max_action_space, 2) where [:, :, 0] = activity_id, [:, :, 1] = team_id
+        self.action_to_pair = torch.full((self.batch_size, self.max_action_space, 2), -1, dtype=torch.long)
+        
+        for b in range(self.batch_size):
+            for action_idx, (act_id, team_id) in enumerate(action_mappings[b]):
+                self.action_to_pair[b, action_idx, 0] = act_id
+                self.action_to_pair[b, action_idx, 1] = team_id
+        
+        if self.debug_env:
+            print(f"\n📊 Action Space 초기화 완료")
+            print(f"   배치별 action space 크기: {action_space_sizes}")
+            print(f"   최대 action space 크기: {self.max_action_space}")
+            if self.batch_size > 0:
+                print(f"   Batch 0 예시 actions (처음 5개):")
+                for i in range(min(5, action_space_sizes[0])):
+                    act, team = action_mappings[0][i]
+                    print(f"      Action {i}: (Activity {act}, Team {team})")
     
     def _update_available_actions(self, batch_idxs):
         """
@@ -194,7 +250,15 @@ class SchedulingEnv:
             # 팀 가용성 체크 (벡터화)
             available_teams = self.team_available_time[b_item] <= current_time  # (N_T,)
             
-            for act_id in range(num_act):
+            # Action space를 순회하며 각 action의 feasibility 체크
+            for action_idx in range(self.max_action_space):
+                act_id = self.action_to_pair[b_item, action_idx, 0].item()
+                team_id = self.action_to_pair[b_item, action_idx, 1].item()
+                
+                # 패딩된 action인 경우 스킵
+                if act_id == -1 or team_id == -1:
+                    continue
+                
                 # 기본 필터: 시작 안 됨 & 프로젝트 released
                 if not (unstarted_mask[act_id] and project_released[act_id]):
                     continue
@@ -203,7 +267,7 @@ class SchedulingEnv:
                 predecessors = self.activity_predecessors[b_item, act_id]
                 valid_preds = predecessors[predecessors >= 0]
                 if len(valid_preds) > 0:
-                    if not self.activity_completed[b_item, valid_preds].all():
+                    if not self.activity_ended[b_item, valid_preds].all():
                         continue
                 
                 # Mutex 제약 확인
@@ -211,14 +275,16 @@ class SchedulingEnv:
                 valid_mutex = mutex_activities[mutex_activities >= 0]
                 if len(valid_mutex) > 0:
                     # 진행 중인 mutex activity가 있는지 확인
-                    mutex_running = (self.activity_started[b_item, valid_mutex] & ~self.activity_completed[b_item, valid_mutex]).any()
+                    mutex_running = (self.activity_started[b_item, valid_mutex] & ~self.activity_ended[b_item, valid_mutex]).any()
                     if mutex_running:
                         continue
                 
-                # Eligible teams 확인 (벡터화)
-                eligible_teams = self.activity_eligible_teams[b_item, act_id]  # (N_T,)
-                possible_teams = eligible_teams & available_teams
-                self.available_actions[b_item, act_id] = possible_teams
+                # 팀 가용성 확인
+                if not available_teams[team_id]:
+                    continue
+                
+                # 모든 조건을 만족하면 가능한 action으로 표시
+                self.available_actions[b_item, action_idx] = True
     
     def step(self, action):
         """
@@ -226,16 +292,17 @@ class SchedulingEnv:
         
         Args:
             action: (batch_size,) - 각 배치의 선택된 action 인덱스
-                    action = activity_id * N_T + team_id (flattened index)
+                    action_to_pair[batch, action] → (activity_id, team_id)
         
         Returns:
             state: 다음 상태 (Graph 형태)
-            reward: (batch_size,) - 보상
+            obj_value: (batch_size,) - 목적함수값 (에피소드 끝날 때만, 아니면 None)
             done: (batch_size,) - 종료 여부
         """
-        # Action을 (activity_id, team_id)로 분해
-        activity_id = action // self.N_T
-        team_id = action % self.N_T
+        # Action index를 (activity_id, team_id)로 변환
+        batch_indices = torch.arange(self.batch_size, dtype=torch.long)
+        activity_id = self.action_to_pair[batch_indices, action, 0]
+        team_id = self.action_to_pair[batch_indices, action, 1]
         
         # 디버깅
         if self.debug_env:
@@ -253,8 +320,8 @@ class SchedulingEnv:
         all_done = self.move_next_state(self.BATCH_IDX)
 
         if all_done:
-            reward = self._get_reward()
-            return None, reward, True
+            obj_value = self._get_obj()  # 목적함수값 반환 (양수)
+            return None, obj_value, True
         else:
             self.state = self._get_state()
             return self.state, None, False
@@ -336,9 +403,9 @@ class SchedulingEnv:
             for b in batch_idxs:
                 b_item = b.item() if torch.is_tensor(b) else b
                 activity_started = self.activity_started[b_item].all().item()
-                activity_completed = self.activity_completed[b_item].all().item()
+                activity_ended = self.activity_ended[b_item].all().item()
                 
-                if activity_completed:
+                if activity_ended:
                     batches_ended.append(b_item)
                 elif activity_started:
                     batches_started.append(b_item)
@@ -353,8 +420,8 @@ class SchedulingEnv:
             # 시간을 진행해야 할 배치들 결정
             batches_to_advance = []
             
-            # 1. ended된 배치들 (다음 의사결정까지 시간 진행)
-            batches_to_advance.extend(batches_ended)
+            # 1. started된 배치들 (ended될 때 까지 시간 진행)
+            batches_to_advance.extend(batches_started)
             
             # 2. started 안된 배치들 중 가능한 액션이 없는 배치들 (다음 의사결정까지 시간 진행)
             for b_idx in batches_not_started:
@@ -366,12 +433,26 @@ class SchedulingEnv:
                 self._advance_to_next_decision_event_for_batches(batches_to_advance_tensor)
                 self._update_available_actions(batches_to_advance_tensor)
             else:
+                # 시간 진행할 배치가 없으면 중단 (모든 배치가 의사결정 가능 상태)
                 break
 
+        # 루프 종료 후 정보 출력
+        if iterations >= max_iterations:
+            print(f"\n❌ [move_next_state] 최대 반복 횟수({max_iterations}) 도달!")
+            for b in batch_idxs:
+                b_item = b.item() if torch.is_tensor(b) else b
+                num_started = self.activity_started[b_item].sum().item()
+                num_completed = self.activity_ended[b_item].sum().item()
+                num_total = self.num_activities[b_item].item()
+                num_available = self.available_actions[b_item].sum().item()
+                print(f"   Batch {b_item}: Started={num_started}/{num_total}, "
+                      f"Completed={num_completed}/{num_total}, "
+                      f"Available Actions={num_available}")
+        
         final_all_done = True
         for b in batch_idxs:
             b_item = b.item() if torch.is_tensor(b) else b
-            if not self.activity_completed[b_item].all().item():
+            if not self.activity_ended[b_item].all().item():
                 final_all_done = False
                 break
         
@@ -398,13 +479,13 @@ class SchedulingEnv:
         just_completed_mask = (
             (self.activity_remaining_time[batch_idxs] <= 0) & 
             self.activity_started[batch_idxs] & 
-            ~self.activity_completed[batch_idxs]
+            ~self.activity_ended[batch_idxs]
         )  # (n_batches, max_N_A)
         
         # 완전 벡터 연산으로 상태 업데이트 (for문 완전 제거)
         
         # 1. Activity completed 상태 업데이트 (완전 벡터)
-        self.activity_completed[batch_idxs] |= just_completed_mask
+        self.activity_ended[batch_idxs] |= just_completed_mask
         
         # 2. Team current_activity 업데이트 (완전 벡터 - Advanced Indexing)
         # 완료된 activity들의 (batch, activity) 좌표 찾기
@@ -459,7 +540,7 @@ class SchedulingEnv:
                 proj_has_activities = proj_activity_mask.any(dim=1)  # (N_P,)
                 
                 # 완료된 activity 마스크
-                completed_mask_expanded = self.activity_completed[b_item].unsqueeze(0)  # (1, max_N_A)
+                completed_mask_expanded = self.activity_ended[b_item].unsqueeze(0)  # (1, max_N_A)
                 proj_completed_activities = proj_activity_mask & completed_mask_expanded  # (N_P, max_N_A)
                 
                 # 각 프로젝트의 완료된 activity 개수 == 전체 activity 개수
@@ -527,7 +608,7 @@ class SchedulingEnv:
             team_id: 팀 ID
         """
         # Activity 상태 업데이트
-        self.activity_completed[batch_idx, activity_id] = True
+        self.activity_ended[batch_idx, activity_id] = True
         
         # 팀 상태 업데이트
         self.team_current_activity[batch_idx, team_id] = -1
@@ -542,7 +623,7 @@ class SchedulingEnv:
         
         # 프로젝트의 모든 activity가 완료되었는지 확인
         proj_activities = (self.activity_project[batch_idx] == proj_id)
-        proj_completed = self.activity_completed[batch_idx] | ~proj_activities  # 해당 프로젝트가 아닌 것은 True로
+        proj_completed = self.activity_ended[batch_idx] | ~proj_activities  # 해당 프로젝트가 아닌 것은 True로
         num_activities = self.num_activities[batch_idx].item()
         
         # 유효한 activity만 확인
@@ -562,32 +643,6 @@ class SchedulingEnv:
             end_time = self.activity_end_time[batch_idx, activity_id].item()
             print(f"   ✅ Activity {activity_id} completed at t={end_time:.1f}")
     
-    
-    def _get_reward(self):
-        """
-        보상 계산 (벡터화 버전)
-        에피소드가 끝났을 때만 실제 보상 반환
-        
-        Returns:
-            reward: (batch_size,) - 보상 (음의 목적함수값)
-        """
-        reward = torch.zeros(self.batch_size, device=self.done.device)
-        
-        if self.done.any():
-            if self.objective == 'tardiness':
-                # Total tardiness (작을수록 좋음)
-                tardiness = torch.clamp(
-                    self.project_completion_time - self.project_due_date,
-                    min=0.0
-                ).sum(dim=1)  # (batch_size,)
-                reward = torch.where(self.done, -tardiness, reward)
-            
-            elif self.objective == 'makespan':
-                # Makespan (작을수록 좋음)
-                makespan = self.project_completion_time.max(dim=1)[0]  # (batch_size,)
-                reward = torch.where(self.done, -makespan, reward)
-        
-        return reward
     
     def _get_obj(self):
         """
@@ -644,7 +699,7 @@ class SchedulingEnv:
                 node_features[idx, 0] = self.activity_duration[b, act_id] / 10.0  # 정규화
                 node_features[idx, 1] = self.activity_project[b, act_id] / self.N_P
                 node_features[idx, 2] = float(self.activity_started[b, act_id])
-                node_features[idx, 3] = float(self.activity_completed[b, act_id])
+                node_features[idx, 3] = float(self.activity_ended[b, act_id])
                 if self.activity_started[b, act_id]:
                     node_features[idx, 4] = self.activity_start_time[b, act_id] / max_time
             
@@ -701,8 +756,8 @@ class SchedulingEnv:
             # ========================================
             # Action 마스크 (가능한 action만 True)
             # ========================================
-            # 실제 activity 수에 맞춰 mask 생성
-            action_mask = self.available_actions[b, :num_act, :].reshape(-1)  # (num_act * N_T,)
+            # Eligible 기반 action space 사용 (이미 1D)
+            action_mask = self.available_actions[b]  # (max_action_space,)
             
             # PyG Data 객체 생성
             data = Data(
@@ -731,6 +786,16 @@ class SchedulingEnv:
             return obj[0].item()
         else:
             return obj
+    
+    def get_action_space_info(self):
+        """
+        Action space 정보 반환 (모델 초기화용)
+        
+        Returns:
+            action_to_pair: (batch_size, max_action_space, 2) - action index → (activity, team) 매핑
+            max_action_space: int - 배치 내 최대 action space 크기
+        """
+        return self.action_to_pair, self.max_action_space
 
 
 # ========================================
@@ -773,8 +838,9 @@ if __name__ == "__main__":
     
     # 가능한 액션 확인
     env._update_available_actions(env.BATCH_IDX)
-    num_feasible = env.available_actions.view(env.batch_size, -1).sum(dim=1)
+    num_feasible = env.available_actions.sum(dim=1)
     print(f"\n가능한 action 수: {num_feasible[0].item()}")
+    print(f"전체 action space 크기: {env.max_action_space}")
     
     # 랜덤 액션 수행 (에피소드 끝까지)
     import random
@@ -793,12 +859,9 @@ if __name__ == "__main__":
                 actions.append(0)  # 더미
             else:
                 # 가능한 액션 중 랜덤 선택
-                feasible_actions = env.available_actions[b].nonzero(as_tuple=False)
+                feasible_actions = env.available_actions[b].nonzero(as_tuple=False).squeeze(-1)
                 if len(feasible_actions) > 0:
-                    chosen = random.choice(feasible_actions)
-                    act_id = chosen[0].item()
-                    team_id = chosen[1].item()
-                    action_idx = act_id * env.N_T + team_id
+                    action_idx = random.choice(feasible_actions).item()
                     actions.append(action_idx)
                 else:
                     actions.append(0)  # 가능한 액션이 없으면 더미

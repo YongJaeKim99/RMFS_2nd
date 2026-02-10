@@ -18,11 +18,11 @@ if __name__ == "__main__":
     RESUME_TRAINING = False  # True: epoch 번호도 이어받기, False: epoch는 0부터 시작 (가중치만 로드)
     
     # Device 옵션
-    DEVICE_MODE = 'hybrid'  # 'cpu', 'hybrid', 'gpu'
+    DEVICE_MODE = 'cpu'  # 'cpu', 'hybrid', 'gpu'
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
             
     # 기본 학습 파라미터
-    EPOCHS = 500
+    EPOCHS = 100
     BATCH_SIZE = 3
     POMO_SIZE = 2  # -1 또는 1로 설정하면 POMO 미사용
 
@@ -51,9 +51,6 @@ if __name__ == "__main__":
     USE_ENTROPY_REG = False
     ENTROPY_COEF = 0.01
     
-    # REINFORCE Loss 타입
-    RL_LOSS_TYPE = 'standard'  # 'standard' or 'sil'
-    
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
     
@@ -72,27 +69,23 @@ if __name__ == "__main__":
     
     # Device mode 설정
     if DEVICE_MODE == 'cpu':
-        model_device = 'cpu'
-        env_device = 'cpu'
-        device_desc = "전부 CPU"
+        device = 'cpu'
+        device_desc = "CPU"
     elif DEVICE_MODE == 'hybrid':
-        model_device = 'cuda'
-        env_device = 'cpu'
-        device_desc = "모델/학습=GPU, 환경=CPU"
+        device = 'cuda'
+        device_desc = "GPU (Hybrid Mode)"
     elif DEVICE_MODE == 'gpu':
-        model_device = 'cuda'
-        env_device = 'cuda'
-        device_desc = "전부 GPU"
+        device = 'cuda'
+        device_desc = "GPU"
     else:
         raise ValueError(f"Invalid DEVICE_MODE: {DEVICE_MODE}")
     
-    print(f"🖥️  Device Mode: {DEVICE_MODE} ({device_desc})")
+    print(f"🖥️  Device Mode: {DEVICE_MODE}")
     if cuda_available:
         print(f"   ├─ CUDA Available: Yes (GPU: {torch.cuda.get_device_name(0)})")
     else:
         print(f"   ├─ CUDA Available: No")
-    print(f"   ├─ Model/Training Device: {model_device}")
-    print(f"   └─ Environment Device: {env_device}")
+    print(f"   └─ Using: {device_desc}")
     print()
     
     # 시드 고정 옵션
@@ -148,13 +141,11 @@ if __name__ == "__main__":
         'seed': SEED if USE_SEED_FIX else None,
         'training_seed_fix': TRAINING_SEED_FIX,
         'training_seed': TRAINING_SEED if TRAINING_SEED_FIX else None,
+        'device': device,
         'device_mode': DEVICE_MODE,
-        'model_device': model_device,
-        'env_device': env_device,
         'mode': 'train',
         'debug_env': DEBUG_ENV,
         'debug_model': DEBUG_MODEL,
-        'rl_loss_type': RL_LOSS_TYPE,
         'use_validation': USE_VALIDATION,
         'validation_interval': VALIDATION_INTERVAL,
         'validation_batch_size': VALIDATION_BATCH_SIZE,
@@ -174,7 +165,6 @@ if __name__ == "__main__":
         print(f"   └─ Epoch 이어받기: {'ON' if RESUME_TRAINING else 'OFF'}")
     
     print(f"Algorithm: REINFORCE")
-    print(f"  └─ RL Loss Type: {RL_LOSS_TYPE}")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
@@ -201,8 +191,8 @@ if __name__ == "__main__":
     
     print(f"Baseline Type: {BASELINE_TYPE}")
     print(f"Advantage Normalization: {'ON' if NORMALIZE_ADVANTAGE else 'OFF'}")
-    print(f"Device Mode: {DEVICE_MODE} ({device_desc})")
-    print(f"  └─ Model/Training: {model_device}, Environment: {env_device}")
+    print(f"Device Mode: {DEVICE_MODE}")
+    print(f"  └─ Device: {device_desc}")
     
     print(f"Global Seed Fix: {USE_SEED_FIX}")
     if USE_SEED_FIX:

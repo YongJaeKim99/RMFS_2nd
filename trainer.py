@@ -81,15 +81,21 @@ class Scheduling_Trainer:
         self.debug_model = trainer_params.get('debug_model', False)
         self.debug_instance_info = trainer_params.get('debug_instance_info', False)  # 배치 내 인스턴스별 정보 출력
         
+        # 목적함수 설정
+        self.objective = env_params.get('objective', 'tardiness')
+        
         # Device 설정
-        device_mode = trainer_params.get('device_mode', 'hybrid')
-        model_device = trainer_params.get('model_device', 'cuda' if torch.cuda.is_available() else 'cpu')
-        env_device = trainer_params.get('env_device', 'cpu')
+        device_str = trainer_params.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(device_str)
+        self.device_mode = trainer_params.get('device_mode', 'cpu')
         
-        self.model_device = torch.device(model_device)
-        self.env_device = torch.device(env_device)
-        
-        print(f"Model Device: {self.model_device}, Environment Device: {self.env_device}")
+        # Hybrid 모드: 모델은 GPU, 환경은 CPU
+        # GPU 모드: 모델과 환경 모두 GPU
+        # CPU 모드: 모델과 환경 모두 CPU
+        if self.device_mode == 'hybrid':
+            print(f"Device: {self.device} (Model on GPU, Environment on CPU)")
+        else:
+            print(f"Device: {self.device}")
         print(f"Debug ENV: {self.debug_env}, Debug Model: {self.debug_model}")
         
         # 모델 초기화
@@ -98,7 +104,7 @@ class Scheduling_Trainer:
         model_params_with_env['N_T'] = env_params['N_T']
         model_params_with_env['N_P'] = env_params['N_P']
         
-        self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.model_device)
+        self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
         
         print("✅ GNN 모델 초기화 완료")
@@ -228,6 +234,30 @@ class Scheduling_Trainer:
                         "val/improvement_pct": 0.0,  # 초기 상태는 0% 개선
                         "val/best_improvement_pct": 0.0
                     }, step=0)
+                
+                # Epoch 0 체크포인트 저장
+                if self.checkpoint_dir is not None:
+                    ckpt_path = os.path.join(self.checkpoint_dir, f"epoch0.pt")
+                    torch.save({
+                        'model_state_dict': self.model.state_dict(),
+                        'optimizer_state_dict': self.optimizer.state_dict(),
+                        'env_params': self.env_params,
+                        'model_params': self.model_params,
+                        'trainer_params': self.trainer_params,
+                        'epoch': 0,
+                        'train_score': None,
+                        'val_score': val_obj_avg,
+                        'initial_val_score': initial_val_score
+                    }, ckpt_path)
+                    print(f"  💾 체크포인트 저장: {ckpt_path}")
+                    
+                    if self.use_wandb:
+                        artifact = wandb.Artifact(
+                            name=f"model_epoch_0",
+                            type="model"
+                        )
+                        artifact.add_file(ckpt_path)
+                        wandb.log_artifact(artifact)
             start_epoch = 1  # 다음부터는 epoch 1부터 시작
         
         for epoch in range(start_epoch, end_epoch+1):
@@ -303,7 +333,7 @@ class Scheduling_Trainer:
                 
             # 체크포인트 저장 (주기적으로)
             if epoch % 5 == 0 and self.checkpoint_dir is not None:
-                ckpt_path = os.path.join(self.checkpoint_dir, f"pomo_rss_epoch{epoch}.pt")
+                ckpt_path = os.path.join(self.checkpoint_dir, f"epoch{epoch}.pt")
                 # 모델 가중치와 함께 env_params, model_params, trainer_params, optimizer 상태도 저장
                 torch.save({
                     'model_state_dict': self.model.state_dict(),
@@ -320,8 +350,8 @@ class Scheduling_Trainer:
                 
                 if self.use_wandb:
                     artifact = wandb.Artifact(
-                        name=f"pomo_rss_model_epoch_{epoch}",   # Artifact 이름 (wandb 상에서 보이는 이름)
-                        type="model"                        # 타입은 자유롭게 지정 가능 (ex. model, checkpoint 등)
+                        name=f"model_epoch_{epoch}",
+                        type="model"
                     )
                     artifact.add_file(ckpt_path)
                     wandb.log_artifact(artifact)
@@ -348,30 +378,24 @@ class Scheduling_Trainer:
         for i in range(self.trainer_params['accumulation_steps']):
             print(f"accumulation_steps: {i}")
             
-            # REINFORCE loss 타입 확인
-            rl_loss_type = self.trainer_params.get('rl_loss_type', 'standard')
-            if rl_loss_type == 'sil':
-                loss, obj_value, step_count, batch_info = self.train_one_micro_batch_sil()
-                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f} (SIL)")
-            else:
-                loss, obj_value, step_count, batch_info = self.train_one_micro_batch()
-                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
+            loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+            print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
             loss.backward()  # REINFORCE는 여기서 backward
             total_loss += loss.item()
             
             # 배치 내 각 인스턴스별 정보 출력 (옵션)
             if self.debug_instance_info:
                 rewards = batch_info['rewards']
-                N_I_list = batch_info['N_I']
+                num_activities_list = batch_info['num_activities']
                 done_status = batch_info['done_status']
                 for b in range(self.env_params['batch_size']):
                     for p in range(self.env_params['pomo_size']):
                         instance_idx = b * self.env_params['pomo_size'] + p
                         reward_val = rewards[b, p].item()
-                        n_items = N_I_list[instance_idx].item()
+                        n_activities = num_activities_list[instance_idx].item()
                         is_done = done_status[instance_idx].item()
                         done_mark = "✅" if is_done else "❌"
-                        print(f"    Instance{b}_POMO{p}: Reward={reward_val:.4f}, Items={n_items}, Steps={step_count}, Done={done_mark}")
+                        print(f"    Instance{b}_POMO{p}: Reward={reward_val:.4f}, Activities={n_activities}, Steps={step_count}, Done={done_mark}")
             
             total_reward += obj_value  # 보상 누적
         
@@ -388,7 +412,7 @@ class Scheduling_Trainer:
         
         return avg_loss, avg_reward
     
-    def train_one_micro_batch(self):
+    def train_one_minibatch(self):
         """REINFORCE 알고리즘을 사용한 학습"""
         # Anomaly detection for debugging in-place operation issues
         torch.autograd.set_detect_anomaly(True)
@@ -412,9 +436,14 @@ class Scheduling_Trainer:
         self.env = env
         problem = generate_scheduling_data_batch(self.env_params)
         env._reset(problem)
+        
+        # 모델에 action space 정보 전달 (초기화 시 한 번만)
+        action_to_pair, max_action_space = env.get_action_space_info()
+        self.model.set_action_space(action_to_pair, max_action_space)
+        
         done = False
         s = env._get_state()
-        log_prob_tmp = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.model_device)
+        log_prob_tmp = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.device)
         
         # action_type을 모두 0으로 초기화 (Action Type 0: Item-Order->CP)
         #batch_size = self.env_params['batch_size'] * self.env_params['pomo_size']
@@ -446,43 +475,16 @@ class Scheduling_Trainer:
             log_prob_tmp += log_prob
             if use_entropy:
                 cumulative_entropy += entropy  # Entropy 누적
-            s, reward, done = env.step(action.to('cpu'))  # s 업데이트!
+            s, obj_value, done = env.step(action.to('cpu'))  # s 업데이트!
 
+        # 목적함수값을 reward로 변환 (음수로)
+        reward = -obj_value  # reward = -목적함수 (최소화 문제를 최대화 문제로)
+        
         # POMO 체크: -1 또는 1이면 POMO 사용 안함
         use_pomo = self.env_params['pomo_size'] > 1
         
         reward_reshape = reward.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-        
-        # Deadlock 발생 체크 및 제외 (옵션)
-        exclude_deadlock = self.trainer_params.get('exclude_deadlock_instances', False)
-        valid_mask = None
-        
-        if exclude_deadlock:
-            # deadlock_occurred를 (batch_size, pomo_size)로 reshape
-            deadlock_reshape = env.deadlock_occurred.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-            # 각 배치별로 하나라도 deadlock이 발생하면 해당 배치의 모든 POMO 제외
-            deadlock_per_batch = deadlock_reshape.any(dim=1)  # (batch_size,)
-            valid_batches = ~deadlock_per_batch  # deadlock이 없는 배치들
-            
-            num_deadlock = deadlock_per_batch.sum().item()
-            if num_deadlock > 0:
-                print(f"   ⚠️ Deadlock 발생: {num_deadlock}개 배치 제외 (총 {self.env_params['batch_size']}개 중)")
-                
-            # valid한 배치만 선택
-            reward_reshape = reward_reshape[valid_batches]  # (valid_batch_size, pomo_size)
-            log_prob_tmp_reshape = log_prob_tmp.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-            log_prob_tmp_valid = log_prob_tmp_reshape[valid_batches].reshape(-1).to(self.device)  # (valid_batch_size * pomo_size,)
-            
-            if use_entropy:
-                cumulative_entropy_reshape = cumulative_entropy.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-                cumulative_entropy = cumulative_entropy_reshape[valid_batches].reshape(-1)  # (valid_batch_size * pomo_size,)
-            
-            # valid한 배치가 없으면 학습 스킵
-            if reward_reshape.shape[0] == 0:
-                print(f"   ❌ 모든 배치에서 deadlock 발생! 이번 micro-batch는 학습하지 않습니다.")
-                return torch.tensor(0.0, device=self.device, requires_grad=True), 0.0, step_count, batch_info
-        else:
-            log_prob_tmp_valid = log_prob_tmp
+        log_prob_tmp_valid = log_prob_tmp
         
         # Baseline 타입에 따른 Advantage 계산
         baseline_type = self.trainer_params.get('baseline_type', 'pomo')
@@ -530,145 +532,27 @@ class Scheduling_Trainer:
         else:
             loss = policy_loss.mean()
         
-        # 목적함수값 계산 (reward의 평균, valid한 배치만)
-        obj_value = reward_reshape.mean().item()
+        # 에피소드 완료 시 각 배치별 목적함수 출력
+        print(f"\n📊 에피소드 완료 - 배치별 목적함수 ({self.objective}):")
+        obj_values = env._get_obj()  # (batch_size * pomo_size,) 목적함수값
+        for b_idx in range(self.env_params['batch_size']):
+            batch_offset = b_idx * self.env_params['pomo_size']
+            batch_obj_values = obj_values[batch_offset:batch_offset + self.env_params['pomo_size']]
+            for p_idx in range(self.env_params['pomo_size']):
+                print(f"   Batch {b_idx} - POMO {p_idx}: {batch_obj_values[p_idx].item():.2f}")
         
-        # 각 인스턴스별 simulation done 여부 확인 (모든 order가 cleared 되었는지)
-        done_status = env.order_cleared.all(dim=1)  # (batch_size * pomo_size,) - 각 인스턴스별 done 여부
+        # 목적함수값 계산 (실제 목적함수의 평균)
+        obj_value = obj_values.mean().item()
         
-        # 배치 내 각 인스턴스별 정보 저장
-        batch_info = {
-            'rewards': reward_reshape,  # (batch_size, pomo_size)
-            'step_count': step_count,
-            'N_I': env.N_I,  # 각 배치별 아이템 개수 (batch_size * pomo_size,)
-            'done_status': done_status  # 각 인스턴스별 simulation done 여부
-        }
-
-        return loss, obj_value, step_count, batch_info
-    
-    def train_one_micro_batch_sil(self):
-        """
-        Self-Imitation Learning (SIL) 알고리즘을 사용한 학습
-        각 배치에서 최고 reward를 받은 경로만 선택하여 학습
-        (Self-improvement for neural combinatorial optimization: sample without replacement, but improvement - Pirnay et al., 2024)
-        """
-        # Anomaly detection for debugging in-place operation issues
-        torch.autograd.set_detect_anomaly(True)
-        
-        # 학습 데이터 생성 seed 고정 옵션 (디버깅용)
-        training_seed_fix = self.trainer_params.get('training_seed_fix', False)
-        training_seed = self.trainer_params.get('training_seed', None)
-        
-        if training_seed_fix and training_seed is not None:
-            # 매 batch마다 동일한 seed로 고정 (디버깅용)
-            import random
-            import numpy as np
-            random.seed(training_seed)
-            np.random.seed(training_seed)
-            torch.manual_seed(training_seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(training_seed)
-        
-        # 환경 초기화
-        env = SchedulingEnv(self.env_params, debug_env=self.debug_env)
-        self.env = env
-        problem = generate_scheduling_data_batch(self.env_params)
-        env._reset(problem)
-        done = False
-        s = env._get_state()
-        log_prob_tmp = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.model_device)
-        
-        step_count = 0
-        MAX_STEPS = 1000  # 타임아웃: 1000 steps 이상 소요 시 조기 종료
-        
-        # Entropy regularization 계수 확인
-        entropy_coef = self.trainer_params.get('entropy_coef', 0.0)
-        use_entropy = entropy_coef > 0
-        
-        # Shaped reward 및 entropy 누적용
-        if use_entropy:
-            cumulative_entropy = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.device)
-
-        while not done:
-            step_count += 1
-            action, log_prob, entropy = self.model.get_action(s)
-            log_prob_tmp += log_prob
-            if use_entropy:
-                cumulative_entropy += entropy  # Entropy 누적
-            s, reward, done = env.step(action.to('cpu'))  # s 업데이트!
-
-        # POMO 체크: -1 또는 1이면 POMO 사용 안함
-        use_pomo = self.env_params['pomo_size'] > 1
-        
-        if not use_pomo:
-            raise ValueError("SIL은 POMO_SIZE > 1일 때만 사용 가능합니다. POMO를 활성화하거나 다른 알고리즘을 선택하세요.")
-        
-        reward_reshape = reward.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-        log_prob_tmp_reshape = log_prob_tmp.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-        
-        # Deadlock 발생 체크 및 제외 (옵션)
-        exclude_deadlock = self.trainer_params.get('exclude_deadlock_instances', False)
-        
-        if exclude_deadlock:
-            # deadlock_occurred를 (batch_size, pomo_size)로 reshape
-            deadlock_reshape = env.deadlock_occurred.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-            # 각 배치별로 하나라도 deadlock이 발생하면 해당 배치의 모든 POMO 제외
-            deadlock_per_batch = deadlock_reshape.any(dim=1)  # (batch_size,)
-            valid_batches = ~deadlock_per_batch  # deadlock이 없는 배치들
-            
-            num_deadlock = deadlock_per_batch.sum().item()
-            if num_deadlock > 0:
-                print(f"   ⚠️ Deadlock 발생: {num_deadlock}개 배치 제외 (총 {self.env_params['batch_size']}개 중)")
-                
-            # valid한 배치만 선택
-            reward_reshape = reward_reshape[valid_batches]  # (valid_batch_size, pomo_size)
-            log_prob_tmp_reshape = log_prob_tmp_reshape[valid_batches]  # (valid_batch_size, pomo_size)
-            
-            if use_entropy:
-                cumulative_entropy_reshape = cumulative_entropy.reshape(self.env_params['batch_size'], self.env_params['pomo_size'])
-                cumulative_entropy_valid = cumulative_entropy_reshape[valid_batches]  # (valid_batch_size, pomo_size)
-            
-            # valid한 배치가 없으면 학습 스킵
-            if reward_reshape.shape[0] == 0:
-                print(f"   ❌ 모든 배치에서 deadlock 발생! 이번 micro-batch는 학습하지 않습니다.")
-                batch_info = {
-                    'rewards': torch.zeros(self.env_params['batch_size'], self.env_params['pomo_size']),
-                    'step_count': step_count,
-                    'N_I': env.N_I,
-                    'done_status': env.order_cleared.all(dim=1)
-                }
-                return torch.tensor(0.0, device=self.device, requires_grad=True), 0.0, step_count, batch_info
-        
-        print("   ℹ️ SIL: 각 배치에서 최고 reward만 선택하여 학습")
-        
-        # Self-Imitation Learning: 각 배치에서 최고 reward를 받은 경로만 선택
-        # reward는 -objective이므로, max가 가장 좋은 것
-        best_reward, best_idx = reward_reshape.max(dim=1)  # (valid_batch_size,)
-        
-        # 각 배치의 best index에 해당하는 log_prob 선택
-        batch_indices = torch.arange(reward_reshape.shape[0], device=self.device)
-        best_log_probs = log_prob_tmp_reshape[batch_indices, best_idx]  # (valid_batch_size,)
-        
-        # Loss 계산: 최고 reward를 받은 경로의 log_prob만 사용
-        loss = -best_log_probs.mean()
-        
-        # Entropy regularization 추가 (사용하는 경우에만)
-        if use_entropy:
-            best_entropy = cumulative_entropy_valid[batch_indices, best_idx]  # (valid_batch_size,)
-            entropy_bonus = entropy_coef * best_entropy.mean()
-            loss = loss - entropy_bonus  # Entropy bonus 추가 (음수 = 최대화)
-        
-        # 목적함수값 계산 (best reward의 평균)
-        obj_value = best_reward.mean().item()
-        
-        # 각 인스턴스별 simulation done 여부 확인 (모든 order가 cleared 되었는지)
-        done_status = env.order_cleared.all(dim=1)  # (batch_size * pomo_size,) - 각 인스턴스별 done 여부
+        # 각 인스턴스별 simulation done 여부 확인
+        # Scheduling 환경: 모든 activity가 완료되었는지
+        done_status = env.activity_ended.all(dim=1)  # (batch_size * pomo_size,) - 각 인스턴스별 done 여부
         
         # 배치 내 각 인스턴스별 정보 저장
         batch_info = {
             'rewards': reward_reshape,  # (batch_size, pomo_size)
             'step_count': step_count,
-            'N_I': env.N_I,  # 각 배치별 아이템 개수 (batch_size * pomo_size,)
+            'num_activities': env.num_activities,  # 각 배치별 activity 개수 (batch_size * pomo_size,)
             'done_status': done_status  # 각 인스턴스별 simulation done 여부
         }
 
@@ -678,15 +562,7 @@ class Scheduling_Trainer:
         """
         테스트 전용 함수: 저장된 테스트 데이터로 모델 평가
         학습 중에는 호출되지 않음
-        
-        Args:
-            mode: 'test' (모델 평가)
-            test_file_start: 테스트 시작 파일 번호
-            test_file_end: 테스트 끝 파일 번호 (포함)
-            data_folder: 데이터 폴더 경로 (기본값: './generated_datasets/data_test')
         """
-        print("⚠️  경고: _eval_one_problem은 test.py에서 사용하세요. 학습 중에는 _eval_validation을 사용합니다.")
-        raise NotImplementedError("테스트는 test.py에서 수행하세요.")
         
         if mode == 'test':
             self.model.eval()
@@ -897,7 +773,7 @@ class Scheduling_Trainer:
         print(f"{'='*60}")
         
         try:
-            checkpoint = torch.load(checkpoint_path, map_location=self.model_device)
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
             
             # 모델 가중치 로드
             self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -950,10 +826,21 @@ class Scheduling_Trainer:
         # 시드 고정하여 재현 가능한 validation set 생성
         validation_seed = 2025
         
-        # Validation 데이터 파일 경로
-        val_data_folder = './generated_datasets/data_val'
+        # Validation 데이터 파일 경로 (환경 설정 포함)
+        val_data_folder = './data/val'
         os.makedirs(val_data_folder, exist_ok=True)
-        val_data_path = os.path.join(val_data_folder, f"validation_data_P{self.env_params['N_P']}_T{self.env_params['N_T']}_seed{validation_seed}.pickle")
+        
+        # 파일명에 주요 환경 파라미터 포함
+        n_p = self.env_params['N_P']
+        n_t = self.env_params['N_T']
+        n_a_min = self.env_params['N_A_min']
+        n_a_max = self.env_params['N_A_max']
+        objective = self.env_params.get('objective', 'tardiness')
+        
+        val_data_path = os.path.join(
+            val_data_folder, 
+            f"val_{objective}_P{n_p}_T{n_t}_A{n_a_min}-{n_a_max}_bs{validation_batch_size}_seed{validation_seed}.pickle"
+        )
         
         # 파일이 이미 존재하는지 확인
         if os.path.exists(val_data_path):
@@ -1058,14 +945,18 @@ class Scheduling_Trainer:
         val_env = SchedulingEnv(val_env_params, debug_env=False)
         val_env._reset(self.validation_problem)
         
+        # 모델에 action space 정보 전달
+        action_to_pair, max_action_space = val_env.get_action_space_info()
+        self.model.set_action_space(action_to_pair, max_action_space)
+        
         done = False
         s = val_env._get_state()
         
         with torch.no_grad():
-            while not done.all():
+            while not done:
                 # Greedy action 선택
                 action = self.model.get_max_action(s)
-                s, reward, done = val_env.step(action.to('cpu'))
+                s, obj_value, done = val_env.step(action.to('cpu'))
         
         # 목적함수값 계산
         obj_value = val_env.get_objective()
