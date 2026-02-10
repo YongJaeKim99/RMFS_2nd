@@ -93,14 +93,16 @@ State는 **이종 그래프(Heterogeneous Graph)** 구조로 표현됩니다.
 #### **Project 노드 피처**
 ```python
 # 위치: 인덱스 0~4는 0으로 패딩, 5~7 사용
-[0, 0, 0, 0, 0, release_time, due_date, completed]
+[0, 0, 0, 0, 0, remaining_release, remaining_due, completed]
 
-# Static 속성
-- [5] release_time: float          # 프로젝트 시작 가능 시간 (정규화: /max_time)
-- [6] due_date: float              # 납기 (정규화: /max_time)
-
-# Dynamic 속성
-- [7] completed: bool              # 완료 여부 (0 또는 1)
+# Dynamic 속성 (시간 경과에 따라 변화)
+- [5] remaining_release: float    # release까지 남은 시간 (정규화: /max_release_time)
+                                   # max(0, release_time - current_time)
+                                   # 이미 release된 경우: 0
+- [6] remaining_due: float        # due date까지 남은 시간 (정규화: /max_due_date)
+                                   # max(0, due_date - current_time)
+                                   # due date 지난 경우: 0
+- [7] completed: bool             # 완료 여부 (0 또는 1)
 ```
 
 ### 1.3 State 텐서 구조
@@ -317,7 +319,8 @@ def get_next_move_t(batch_idxs):
 │  State s_{t+1}                                      │
 │  - 그래프 구조 유지 (노드/엣지 불변)                 │
 │  - Dynamic 노드 피처 업데이트                        │
-│    (started, ended, remaining_time, available_time) │
+│    (started, ended, remaining_time, available_time, │
+│     remaining_release, remaining_due, completed)    │
 │  - Dynamic 엣지 피처 업데이트                        │
 │    (is_ordered, is_assigned)                        │
 │  - sim_time = t + Δt                                │

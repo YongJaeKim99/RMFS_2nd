@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["RL", "GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
     GA_POPULATION_SIZE = 100

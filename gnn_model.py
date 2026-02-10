@@ -127,15 +127,7 @@ class SchedulingModel(nn.Module):
             if len(mask_b) > len(logit_b):
                 mask_b = mask_b[:len(logit_b)]
             
-            num_available = mask_b.sum().item()
-            
-            # 디버깅
-            if self.debug_model:
-                available_indices = torch.where(mask_b)[0]
-                print(f"\n[DEBUG] Batch {b} - Available actions: {num_available}")
-                print(f"  Logit size: {len(logit_b)}, Mask size: {len(mask_b)}")
-                if num_available > 0 and num_available <= 20:
-                    print(f"  Available action indices: {available_indices.tolist()}")
+            num_available = mask_b.sum().item()            
             
             # 모든 action이 infeasible인 경우
             if num_available == 0:
@@ -160,11 +152,7 @@ class SchedulingModel(nn.Module):
             policy_b = Categorical(prob_b)
             action_b = policy_b.sample()
             log_prob_b = policy_b.log_prob(action_b)
-            entropy_b = policy_b.entropy()
-            
-            # 디버깅
-            if self.debug_model and b < 3:
-                print(f"[DEBUG] Batch {b}: Action={action_b.item()}, Prob={prob_b[action_b].item():.4f}")
+            entropy_b = policy_b.entropy()            
             
             action_list.append(action_b)
             log_prob_list.append(log_prob_b)
@@ -250,9 +238,9 @@ class GNNModel(nn.Module):
             nn.ReLU()
         )
         
-        # GAT 레이어들
+        # GAT 레이어들 (edge_dim=1: edge feature 사용)
         self.gat_layers = nn.ModuleList([
-            GATLayer(D, D//H, heads=H, dropout=0.20) 
+            GATLayer(D, D//H, heads=H, dropout=0.20, edge_dim=1) 
             for _ in range(L)
         ])
 
@@ -466,72 +454,3 @@ class GNNModel(nn.Module):
         action_logits = torch.cat(action_logits_list, dim=0)
         
         return action_logits
-
-
-# ========================================
-# 테스트 코드
-# ========================================
-if __name__ == "__main__":
-    print("="*60)
-    print("SchedulingModel 테스트")
-    print("="*60)
-    
-    # 모델 파라미터
-    model_params = {
-        'embedding_dim': 128,
-        'num_head': 8,
-        'num_encoder_layer': 3,
-        'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
-        'gat_version': 'v2',
-        'N_T': 3,
-        'N_P': 3,
-    }
-    
-    # 모델 생성
-    model = SchedulingModel(model_params, debug_model=True)
-    print(f"\n✅ 모델 생성 완료")
-    print(f"   Embedding Dim: {model_params['embedding_dim']}")
-    print(f"   Num Heads: {model_params['num_head']}")
-    print(f"   Num Layers: {model_params['num_encoder_layer']}")
-    
-    # 더미 state 생성
-    num_activities = 10
-    N_T = 3
-    N_P = 3
-    num_nodes = num_activities + N_T + N_P
-    
-    # 노드 feature (8차원)
-    x = torch.randn(num_nodes, 8)
-    
-    # 엣지 (랜덤)
-    edge_index = torch.randint(0, num_nodes, (2, 20))
-    
-    # Action mask (일부만 True)
-    mask = torch.zeros(num_activities * N_T, dtype=torch.bool)
-    mask[:10] = True  # 처음 10개만 가능
-    
-    # PyG Data 객체
-    data = Data(
-        x=x,
-        edge_index=edge_index,
-        mask=mask,
-        num_activities=num_activities,
-        N_T=N_T,
-        N_P=N_P
-    )
-    
-    state = [data]
-    
-    # Forward pass 테스트
-    print(f"\n🔄 Forward pass 테스트...")
-    action, log_prob, entropy = model.get_action(state)
-    print(f"   Action: {action.item()}")
-    print(f"   Log Prob: {log_prob.item():.4f}")
-    print(f"   Entropy: {entropy.item():.4f}")
-    
-    # Greedy action 테스트
-    print(f"\n🎯 Greedy action 테스트...")
-    greedy_action = model.get_max_action(state)
-    print(f"   Greedy Action: {greedy_action.item()}")
-    
-    print("\n✅ SchedulingModel 테스트 완료!")

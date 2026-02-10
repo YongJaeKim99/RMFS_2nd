@@ -1,0 +1,21 @@
+epoch: 0 (초기 상태 - 학습 전)
+epoch: 1
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 269, in run
+    train_loss_avg, train_reward_avg = self._train_one_batch()
+                                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 383, in _train_one_batch
+    loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 483, in train_one_minibatch
+    s, obj_value, done = env.step(action.to('cpu'))  # s 업데이트!
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\scheduling_env.py", line 302, in step
+    self.state = self._get_state()
+                 ^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\scheduling_env.py", line 674, in _get_state
+    if mutex_id >= 0 and mutex_id < num_act and mutex_id > act_id:
+       ^^^^^^^^^^^^^
+KeyboardInterrupt

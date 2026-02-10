@@ -1,0 +1,128 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 75.9800, time: 29.03s
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch0.pt
+epoch: 1
+epoch: 1, loss: -0.7427, reward: 76.0417, tardiness: -76.0417, time: 44.99s
+epoch: 2
+epoch: 2, loss: 1.5845, reward: 74.7917, tardiness: -74.7917, time: 43.56s
+epoch: 3
+epoch: 3, loss: 2.1429, reward: 73.7917, tardiness: -73.7917, time: 41.37s
+epoch: 4
+epoch: 4, loss: -0.9685, reward: 71.9167, tardiness: -71.9167, time: 17.81s
+epoch: 5
+epoch: 5, loss: 2.6741, reward: 71.7083, tardiness: -71.7083, time: 17.03s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 71.7800 (+5.53%), time: 9.71s
+  🏆 Best Model 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\best_model.pt (Val tardiness: 71.7800)
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch5.pt
+epoch: 6
+epoch: 6, loss: -4.5493, reward: 76.9167, tardiness: -76.9167, time: 18.10s
+epoch: 7
+epoch: 7, loss: -6.5497, reward: 74.8333, tardiness: -74.8333, time: 19.17s
+epoch: 8
+epoch: 8, loss: -0.6281, reward: 68.1667, tardiness: -68.1667, time: 16.81s
+epoch: 9
+epoch: 9, loss: 0.3140, reward: 77.6667, tardiness: -77.6667, time: 18.44s
+epoch: 10
+epoch: 10, loss: 0.4152, reward: 68.2500, tardiness: -68.2500, time: 15.79s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 72.0200 (+5.21%), time: 9.15s
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch10.pt
+epoch: 11
+epoch: 11, loss: -2.1159, reward: 72.7083, tardiness: -72.7083, time: 16.64s
+epoch: 12
+epoch: 12, loss: 2.7705, reward: 75.2500, tardiness: -75.2500, time: 18.32s
+epoch: 13
+epoch: 13, loss: 4.0864, reward: 74.6667, tardiness: -74.6667, time: 17.20s
+epoch: 14
+epoch: 14, loss: -3.8061, reward: 78.6250, tardiness: -78.6250, time: 17.54s
+epoch: 15
+epoch: 15, loss: -2.2811, reward: 68.5833, tardiness: -68.5833, time: 15.86s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 70.7800 (+6.84%), time: 8.69s
+  🏆 Best Model 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\best_model.pt (Val tardiness: 70.7800)
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch15.pt
+epoch: 16
+epoch: 16, loss: -0.1380, reward: 75.3333, tardiness: -75.3333, time: 18.27s
+epoch: 17
+epoch: 17, loss: -4.5657, reward: 75.0000, tardiness: -75.0000, time: 16.44s
+epoch: 18
+epoch: 18, loss: -6.9942, reward: 70.6667, tardiness: -70.6667, time: 16.73s
+epoch: 19
+epoch: 19, loss: -1.9021, reward: 82.0417, tardiness: -82.0417, time: 17.01s
+epoch: 20
+epoch: 20, loss: -6.8083, reward: 75.3333, tardiness: -75.3333, time: 17.05s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 70.6400 (+7.03%), time: 7.76s
+  🏆 Best Model 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\best_model.pt (Val tardiness: 70.6400)
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch20.pt
+epoch: 21
+epoch: 21, loss: 6.1572, reward: 70.7917, tardiness: -70.7917, time: 16.60s
+epoch: 22
+epoch: 22, loss: -0.2964, reward: 73.9167, tardiness: -73.9167, time: 17.27s
+epoch: 23
+epoch: 23, loss: -1.5288, reward: 75.3750, tardiness: -75.3750, time: 19.81s
+epoch: 24
+epoch: 24, loss: -1.1839, reward: 67.5833, tardiness: -67.5833, time: 15.56s
+epoch: 25
+epoch: 25, loss: -2.1569, reward: 73.2500, tardiness: -73.2500, time: 21.51s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 70.8800 (+6.71%), time: 15.18s
+  💾 체크포인트 저장: ./checkpoints/20260210_165034_tardiness_REINFORCE\epoch25.pt
+epoch: 26
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 269, in run
+    train_loss_avg, train_reward_avg = self._train_one_batch()
+                                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 383, in _train_one_batch
+    loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 479, in train_one_minibatch
+    action, log_prob, entropy = self.model.get_action(s)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 113, in get_action
+    action_logits = self.forward(s)
+                    ^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 63, in forward
+    action_logits = self.gnn_model(state.x, state.edge_index, state)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 297, in forward
+    out = self.gat_layers[layer](emd, edge_index, edge_attr=edge_attr)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\gatv2_conv.py", line 325, in forward
+    alpha = self.edge_updater(edge_index, x=(x_l, x_r),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\AppData\Local\Temp\torch_geometric.nn.conv.gatv2_conv_GATv2Conv_edge_updater_en_f41ry.py", line 176, in edge_updater
+    out = self.edge_update(
+          ^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\gatv2_conv.py", line 364, in edge_update
+    edge_attr = self.lin_edge(edge_attr)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\dense\linear.py", line 147, in forward
+    return F.linear(x, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\fx\traceback.py", line 66, in format_stack
+    @compatibility(is_backward_compatible=False)
+
+KeyboardInterrupt

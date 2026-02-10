@@ -18,24 +18,24 @@ if __name__ == "__main__":
     RESUME_TRAINING = False  # True: epoch 번호도 이어받기, False: epoch는 0부터 시작 (가중치만 로드)
     
     # Device 옵션
-    DEVICE_MODE = 'cpu'  # 'cpu', 'hybrid', 'gpu'
+    DEVICE_MODE = 'hybrid'  # 'cpu', 'hybrid', 'gpu'
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
             
     # 기본 학습 파라미터
-    EPOCHS = 100
-    BATCH_SIZE = 3
-    POMO_SIZE = 2  # -1 또는 1로 설정하면 POMO 미사용
+    EPOCHS = 200
+    BATCH_SIZE = 16
+    POMO_SIZE = 8  # -1 또는 1로 설정하면 POMO 미사용
 
     # Wandb 옵션
-    USE_WANDB = False
+    USE_WANDB = True
     WANDB_PROJECT = "RCMPSP"  # Resource-Constrained Multi-Project Scheduling Problem
     WANDB_RUN_NAME = None
     WANDB_RUN_ID = None
     WANDB_RESUME = None
     
     # Validation 옵션
-    USE_VALIDATION = False
-    VALIDATION_INTERVAL = 10  # Validation 수행 주기 (epoch 단위)
+    USE_VALIDATION = True
+    VALIDATION_INTERVAL = 5  # Validation 수행 주기 (epoch 단위)
     VALIDATION_BATCH_SIZE = 50
     VALIDATION_POMO_SIZE = 1
     
@@ -57,6 +57,10 @@ if __name__ == "__main__":
     # 디버그 옵션
     DEBUG_ENV = False
     DEBUG_MODEL = False
+    
+    # 로깅 상세도 옵션
+    VERBOSE_LOGGING = False  # True: 각 batch/POMO별 목적함수와 started/ended 출력
+                              # False: accumulation마다 평균값만, epoch 끝날 때만 출력
     
     # =================================================================
     # GPU/CPU 설정 및 검증
@@ -100,15 +104,34 @@ if __name__ == "__main__":
     # 환경 파라미터 설정 (Multi-Project Scheduling)
     # =================================================================
     
+    # 작은 사이즈
+    env_params = {
+         'batch_size': BATCH_SIZE,
+         'pomo_size': POMO_SIZE,
+         'N_P': 5,  # 프로젝트 수
+         'N_A_min': 4,  # 프로젝트당 최소 activity 수
+         'N_A_max': 6,  # 프로젝트당 최대 activity 수
+         'N_T': 4,  # 팀 수
+         'duration_min': 2,  # 최소 작업 시간
+         'duration_max': 6,  # 최대 작업 시간
+         'precedence_prob': 0.3,  # 선행 관계 생성 확률
+         'mutex_prob': 0.1,  # 동시 불가 생성 확률
+         'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
+         'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
+         'objective': OBJECTIVE,
+         'debug_env': DEBUG_ENV,
+    }
+    '''
+    # 큰 사이즈
     env_params = {
         'batch_size': BATCH_SIZE,
         'pomo_size': POMO_SIZE,
-        'N_P': 5,  # 프로젝트 수
-        'N_A_min': 4,  # 프로젝트당 최소 activity 수
-        'N_A_max': 6,  # 프로젝트당 최대 activity 수
-        'N_T': 4,  # 팀 수
-        'duration_min': 2,  # 최소 작업 시간
-        'duration_max': 6,  # 최대 작업 시간
+        'N_P': 10,  # 프로젝트 수 (5 → 10)
+        'N_A_min': 10,  # 프로젝트당 최소 activity 수 (4 → 10)
+        'N_A_max': 20,  # 프로젝트당 최대 activity 수 (6 → 20)
+        'N_T': 8,  # 팀 수 (4 → 8)
+        'duration_min': 1,  # 최소 작업 시간 (2 → 1)
+        'duration_max': 10,  # 최대 작업 시간 (6 → 10)
         'precedence_prob': 0.3,  # 선행 관계 생성 확률
         'mutex_prob': 0.1,  # 동시 불가 생성 확률
         'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
@@ -116,7 +139,7 @@ if __name__ == "__main__":
         'objective': OBJECTIVE,
         'debug_env': DEBUG_ENV,
     }
-    
+    '''
     # 모델 파라미터 설정
     model_params = {
         'embedding_dim': 128,
@@ -128,7 +151,7 @@ if __name__ == "__main__":
     # 트레이너 파라미터 설정
     trainer_params = {
         'epochs': EPOCHS,
-        'accumulation_steps': 1,
+        'accumulation_steps': 4,
         'grad_clip_norm': 1.0,
         'entropy_coef': ENTROPY_COEF if USE_ENTROPY_REG else 0.0,
         'baseline_type': BASELINE_TYPE,
@@ -146,6 +169,7 @@ if __name__ == "__main__":
         'mode': 'train',
         'debug_env': DEBUG_ENV,
         'debug_model': DEBUG_MODEL,
+        'verbose_logging': VERBOSE_LOGGING,
         'use_validation': USE_VALIDATION,
         'validation_interval': VALIDATION_INTERVAL,
         'validation_batch_size': VALIDATION_BATCH_SIZE,
@@ -212,6 +236,9 @@ if __name__ == "__main__":
         print(f"  └─ Validation Batch Size: {VALIDATION_BATCH_SIZE}")
     
     print(f"Debug ENV: {DEBUG_ENV}, Debug Model: {DEBUG_MODEL}")
+    print(f"Verbose Logging: {'ON' if VERBOSE_LOGGING else 'OFF'}")
+    if not VERBOSE_LOGGING:
+        print(f"  └─ 간략 모드: accumulation마다 평균값만, epoch 끝날 때만 출력")
     print("="*60)
     
     # 학습 실행

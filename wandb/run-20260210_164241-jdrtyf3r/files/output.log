@@ -1,0 +1,27 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 219, in run
+    val_obj_avg = self._eval_validation(validation_batch_size, validation_pomo_size)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 965, in _eval_validation
+    action_to_pair, max_action_space = val_env.get_action_space_info()
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'SchedulingEnv' object has no attribute 'get_action_space_info'
+Exception ignored in atexit callback: <function _start_and_connect_service.<locals>.teardown_atexit at 0x000001D1EFD3FE20>
+Traceback (most recent call last):
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\wandb\sdk\lib\service_connection.py", line 94, in teardown_atexit
+    conn.teardown(hooks.exit_code)
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\wandb\sdk\lib\service_connection.py", line 226, in teardown
+    self._router.join()
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\wandb\sdk\interface\router.py", line 75, in join
+    self._thread.join()
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\threading.py", line 1149, in join
+    self._wait_for_tstate_lock()
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\threading.py", line 1169, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt:
+[0m

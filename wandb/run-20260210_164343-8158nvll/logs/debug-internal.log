@@ -1,0 +1,15 @@
+{"time":"2026-02-10T16:43:43.698112+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260210_164343-8158nvll\\logs\\debug-core.log"}
+{"time":"2026-02-10T16:43:44.0486499+09:00","level":"INFO","msg":"created new stream","id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.0500403+09:00","level":"INFO","msg":"stream: started","id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.0500403+09:00","level":"INFO","msg":"handler: started","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.0500403+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.0500403+09:00","level":"INFO","msg":"sender: started","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.443913+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-10T16:43:44.9477144+09:00","level":"INFO","msg":"stream: closing","id":"8158nvll"}
+{"time":"2026-02-10T16:43:44.9477144+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-10T16:43:44.9477144+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-10T16:43:46.3370076+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-10T16:43:46.5983433+09:00","level":"INFO","msg":"handler: closed","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:46.5983433+09:00","level":"INFO","msg":"sender: closed","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:46.5983433+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"8158nvll"}
+{"time":"2026-02-10T16:43:46.5993288+09:00","level":"INFO","msg":"stream: closed","id":"8158nvll"}

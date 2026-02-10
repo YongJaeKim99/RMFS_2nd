@@ -80,6 +80,7 @@ class Scheduling_Trainer:
         self.debug_env = trainer_params.get('debug_env', False)
         self.debug_model = trainer_params.get('debug_model', False)
         self.debug_instance_info = trainer_params.get('debug_instance_info', False)  # 배치 내 인스턴스별 정보 출력
+        self.verbose_logging = trainer_params.get('verbose_logging', False)  # 각 batch/POMO별 상세 출력
         
         # 목적함수 설정
         self.objective = env_params.get('objective', 'tardiness')
@@ -376,10 +377,14 @@ class Scheduling_Trainer:
         total_reward = 0  # 전체 보상 초기화
 
         for i in range(self.trainer_params['accumulation_steps']):
-            print(f"accumulation_steps: {i}")
+            if self.verbose_logging:
+                print(f"accumulation_steps: {i}")
             
             loss, obj_value, step_count, batch_info = self.train_one_minibatch()
-            print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
+            
+            if self.verbose_logging:
+                print(f"  평균 목적함수값: {obj_value:.4f}, Loss: {loss.item():.4f}")
+            
             loss.backward()  # REINFORCE는 여기서 backward
             total_loss += loss.item()
             
@@ -492,7 +497,8 @@ class Scheduling_Trainer:
         
         if baseline_type == 'batch':
             # 배치 전체 baseline + 표준화 (B×K)
-            print("   ℹ️ Batch Baseline: 배치 전체에서 baseline 계산 (B×K)")
+            if self.verbose_logging:
+                print("   ℹ️ Batch Baseline: 배치 전체에서 baseline 계산 (B×K)")
             reward_flat = reward_reshape.reshape(-1)  # (B*K,)
             
             # Baseline = 배치 전체 평균
@@ -501,11 +507,13 @@ class Scheduling_Trainer:
             # 표준편차로 정규화 (옵션)
             if normalize_advantage:
                 advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
-                print(f"     └─ 표준화 완료: mean=0, std=1")
+                if self.verbose_logging:
+                    print(f"     └─ 표준화 완료: mean=0, std=1")
         
         elif baseline_type == 'pomo' and use_pomo:
             # POMO baseline (인스턴스별)
-            print("   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용")
+            if self.verbose_logging:
+                print("   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용")
             advantage = reward_reshape - torch.mean(reward_reshape, -1, keepdim=True)
             
             # 표준편차로 정규화 (옵션)
@@ -517,7 +525,8 @@ class Scheduling_Trainer:
         
         else:
             # Baseline 없음
-            print("   ℹ️ No Baseline: raw reward 사용")
+            if self.verbose_logging:
+                print("   ℹ️ No Baseline: raw reward 사용")
             advantage = reward_reshape.reshape(-1)  # Raw reward 그대로 사용
         
         advantage = advantage.to(self.device)
@@ -532,14 +541,25 @@ class Scheduling_Trainer:
         else:
             loss = policy_loss.mean()
         
-        # 에피소드 완료 시 각 배치별 목적함수 출력
-        print(f"\n📊 에피소드 완료 - 배치별 목적함수 ({self.objective}):")
+        # 목적함수값 계산
         obj_values = env._get_obj()  # (batch_size * pomo_size,) 목적함수값
-        for b_idx in range(self.env_params['batch_size']):
-            batch_offset = b_idx * self.env_params['pomo_size']
-            batch_obj_values = obj_values[batch_offset:batch_offset + self.env_params['pomo_size']]
-            for p_idx in range(self.env_params['pomo_size']):
-                print(f"   Batch {b_idx} - POMO {p_idx}: {batch_obj_values[p_idx].item():.2f}")
+        
+        # 에피소드 완료 시 각 배치별 목적함수 출력 (verbose_logging이 True일 때만)
+        if self.verbose_logging:
+            print(f"\n📊 에피소드 완료 - 배치별 목적함수 ({self.objective}):")
+            for b_idx in range(self.env_params['batch_size']):
+                batch_offset = b_idx * self.env_params['pomo_size']
+                batch_obj_values = obj_values[batch_offset:batch_offset + self.env_params['pomo_size']]
+                for p_idx in range(self.env_params['pomo_size']):
+                    instance_idx = batch_offset + p_idx
+                    
+                    # Activity 상태 개수 계산
+                    num_total_activities = env.num_activities[instance_idx].item()
+                    num_started = env.activity_started[instance_idx, :num_total_activities].sum().item()
+                    num_ended = env.activity_ended[instance_idx, :num_total_activities].sum().item()
+                    
+                    print(f"   Batch {b_idx} - POMO {p_idx}: {batch_obj_values[p_idx].item():.2f} "
+                          f"(started: {num_started}/{num_total_activities}, ended: {num_ended}/{num_total_activities})")
         
         # 목적함수값 계산 (실제 목적함수의 평균)
         obj_value = obj_values.mean().item()
@@ -851,9 +871,9 @@ class Scheduling_Trainer:
                 with open(val_data_path, 'rb') as f:
                     validation_data = pickle.load(f)
                 
-                # validation_problem 추출 (env_params와 validation_seed 제외)
+                # validation_problem 추출 (validation_seed만 제외, env_params는 포함)
                 self.validation_problem = {k: v for k, v in validation_data.items() 
-                                          if k not in ['env_params', 'validation_seed']}
+                                          if k not in ['validation_seed']}
                 
                 # 배치 크기 확인
                 loaded_batch_size = validation_data.get('env_params', {}).get('batch_size', validation_batch_size)
@@ -946,7 +966,7 @@ class Scheduling_Trainer:
         val_env._reset(self.validation_problem)
         
         # 모델에 action space 정보 전달
-        action_to_pair, max_action_space = val_env.get_action_space_info()
+        action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
         self.model.set_action_space(action_to_pair, max_action_space)
         
         done = False
@@ -959,7 +979,7 @@ class Scheduling_Trainer:
                 s, obj_value, done = val_env.step(action.to('cpu'))
         
         # 목적함수값 계산
-        obj_value = val_env.get_objective()
+        obj_value = val_env._get_obj()
         if isinstance(obj_value, torch.Tensor):
             obj_value = obj_value.mean().item()
         

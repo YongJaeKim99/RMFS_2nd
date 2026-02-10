@@ -1,0 +1,97 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 78.2800, time: 7.86s
+  💾 체크포인트 저장: ./checkpoints/20260210_164630_tardiness_REINFORCE\epoch0.pt
+epoch: 1
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 1, loss: -2.6931, reward: 70.7917, tardiness: -70.7917, time: 16.00s
+epoch: 2
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 2, loss: -7.6300, reward: 70.3750, tardiness: -70.3750, time: 17.19s
+epoch: 3
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 3, loss: -0.6065, reward: 74.5417, tardiness: -74.5417, time: 19.47s
+epoch: 4
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 4, loss: -5.4272, reward: 72.3333, tardiness: -72.3333, time: 19.45s
+epoch: 5
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 5, loss: -1.3457, reward: 70.7500, tardiness: -70.7500, time: 16.86s
+  💾 체크포인트 저장: ./checkpoints/20260210_164630_tardiness_REINFORCE\epoch5.pt
+epoch: 6
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 6, loss: 5.4145, reward: 70.6250, tardiness: -70.6250, time: 17.70s
+epoch: 7
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 7, loss: -1.6587, reward: 69.8333, tardiness: -69.8333, time: 15.40s
+epoch: 8
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 8, loss: 3.6705, reward: 72.5833, tardiness: -72.5833, time: 16.28s
+epoch: 9
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 9, loss: -1.3102, reward: 72.0417, tardiness: -72.0417, time: 15.80s
+epoch: 10
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 10, loss: -3.2982, reward: 75.7083, tardiness: -75.7083, time: 18.00s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 70.1200 (+10.42%), time: 9.26s
+  🏆 Best Model 저장: ./checkpoints/20260210_164630_tardiness_REINFORCE\best_model.pt (Val tardiness: 70.1200)
+  💾 체크포인트 저장: ./checkpoints/20260210_164630_tardiness_REINFORCE\epoch10.pt
+epoch: 11
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 11, loss: -4.7490, reward: 62.1250, tardiness: -62.1250, time: 15.71s
+epoch: 12
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+   ℹ️ POMO Baseline: 인스턴스별 POMO 평균 사용
+epoch: 12, loss: -0.0325, reward: 65.8333, tardiness: -65.8333, time: 18.91s
+epoch: 13
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 269, in run
+    train_loss_avg, train_reward_avg = self._train_one_batch()
+                                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 383, in _train_one_batch
+    loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 479, in train_one_minibatch
+    action, log_prob, entropy = self.model.get_action(s)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 159, in get_action
+    entropy_list.append(entropy_b)
+KeyboardInterrupt
