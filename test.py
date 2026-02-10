@@ -51,10 +51,10 @@ if __name__ == "__main__":
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
-    GA_POPULATION_SIZE = 100
+    GA_POPULATION_SIZE = 50
     GA_GENERATIONS = 300
     GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
     
@@ -66,11 +66,16 @@ if __name__ == "__main__":
     # =================================================================
     # 📊 테스트 데이터 설정
     # =================================================================
-    TEST_DATA_TYPE = 'test'  # 'test' or 'val'
+    # 테스트할 데이터 타입 선택
+    # - 'test': data/test/ 폴더의 0.pickle, 1.pickle, ... 파일 사용
+    # - 'val': data/val/ 폴더의 validation 데이터 파일 사용 (train.py에서 자동 생성)
+    TEST_DATA_TYPE = 'val'  # 'test' or 'val'
     
     # 테스트 데이터 파일 범위 설정
+    # - 'test' 모드: TEST_FILE_START.pickle ~ TEST_FILE_END.pickle
+    # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
     TEST_FILE_START = 0
-    TEST_FILE_END = 29
+    TEST_FILE_END = 49
     
     # -----------------------------
     # 3) 기타 설정
@@ -260,36 +265,8 @@ if __name__ == "__main__":
             print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
         exit(1)
     
-    # 데이터 파일 찾기
-    if TEST_DATA_TYPE == 'val':
-        # Validation 데이터는 파일명 패턴이 다름
-        n_p = env_params['N_P']
-        n_t = env_params['N_T']
-        n_a_min = env_params['N_A_min']
-        n_a_max = env_params['N_A_max']
-        validation_seed = 2025
-        
-        val_pattern = f"val_{OBJECTIVE}_P{n_p}_T{n_t}_A{n_a_min}-{n_a_max}_bs*_seed{validation_seed}.pickle"
-        val_files = list(data_base_dir.glob(val_pattern))
-        
-        if not val_files:
-            print(f"⚠️  경고: Validation 데이터 파일을 찾을 수 없습니다.")
-            print(f"   패턴: {val_pattern}")
-            print(f"   경로: {data_base_dir}")
-            print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
-            exit(1)
-        
-        # 첫 번째 매칭 파일 사용
-        test_data_path = val_files[0]
-        print(f"📄 Validation 데이터 파일: {test_data_path.name}")
-        
-        # 단일 파일 모드 (파일 번호 사용 안 함)
-        USE_SINGLE_FILE = True
-    else:
-        # Test 데이터는 번호별 파일 (i.pickle)
-        test_data_path = None
-        USE_SINGLE_FILE = False
-        print(f"📄 Test 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
+    # 데이터 파일 확인 (test와 val 모두 동일한 형식: 0.pickle, 1.pickle, ...)
+    print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     
     # -----------------------------
     # 7) 체크포인트 로드 (RL 테스트가 있을 때만)
@@ -348,79 +325,8 @@ if __name__ == "__main__":
         
         ga_results = []
         
-        if USE_SINGLE_FILE:
-            # Validation 모드: 단일 파일에서 모든 배치 처리
-            print(f"\n📋 테스트 파일: {test_data_path.name}")
-            
-            try:
-                # 테스트 데이터 로드
-                with open(test_data_path, 'rb') as fr:
-                    problem = pickle.load(fr)
-                
-                print(f"   ✅ 데이터 로드 완료: {test_data_path.name}")
-                
-                # Validation 데이터의 배치 크기 확인
-                batch_size = problem['num_activities'].shape[0] if 'num_activities' in problem else 0
-                print(f"   📊 총 배치 수: {batch_size}")
-                
-                # 각 배치를 개별 인스턴스로 처리
-                for batch_idx in range(min(batch_size, TEST_FILE_END - TEST_FILE_START + 1)):
-                    instance_num = TEST_FILE_START + batch_idx
-                    print(f"\n   🔄 처리 중: Batch {batch_idx} (Instance {instance_num})")
-                    
-                    start_time = time.time()
-                    
-                    try:
-                        # 단일 배치 추출을 위한 환경 생성 및 GA 변환
-                        from data_generator import convert_problem_to_ga_format
-                        
-                        # 환경 생성 (단일 배치) - Test 모드는 무조건 CPU
-                        single_env_params = env_params.copy()
-                        single_env_params['batch_size'] = 1
-                        temp_env = SchedulingEnv(single_env_params, debug_env=False, device='cpu')
-                        temp_env._reset(problem)
-                        
-                        # batch_idx에 해당하는 데이터만 추출
-                        projects = convert_problem_to_ga_format(problem, batch_idx, env_params['N_T'])
-                        
-                        # GA 실행
-                        ga = GeneticAlgorithm(
-                            projects=projects,
-                            num_teams=env_params['N_T'],
-                            population_size=GA_POPULATION_SIZE,
-                            generations=GA_GENERATIONS,
-                            decode_mode=GA_DECODE_MODE
-                        )
-                        best_solution = ga.evolve()
-                        objective_value = best_solution.objective
-                        
-                        end_time = time.time()
-                        runtime = end_time - start_time
-                        
-                        result = {
-                            'algorithm': 'GA',
-                            'instance': instance_num,
-                            'objective_value': objective_value,
-                            'runtime': runtime
-                        }
-                        ga_results.append(result)
-                        
-                        print(f"      [GA][Instance {instance_num}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
-                    
-                    except Exception as e:
-                        print(f"      ❌ [GA][Instance {instance_num}] 실행 중 오류: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        continue
-            
-            except Exception as e:
-                print(f"❌ 데이터 로드 실패: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        else:
-            # Test 모드: 번호별 개별 파일 처리
-            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+        # Test와 Validation 모두 동일한 형식: 개별 파일 (0.pickle, 1.pickle, ...)
+        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
                 data_path = data_base_dir / f"{i}.pickle"
                 if not data_path.exists():
                     print(f"⚠️  Warning: Data file not found: {data_path}")
@@ -516,87 +422,8 @@ if __name__ == "__main__":
         
         rl_results = []
         
-        if USE_SINGLE_FILE:
-            # Validation 모드: 단일 파일에서 모든 배치 처리
-            print(f"\n📋 테스트 파일: {test_data_path.name}")
-            
-            try:
-                # 테스트 데이터 로드
-                with open(test_data_path, 'rb') as fr:
-                    problem = pickle.load(fr)
-                
-                print(f"   ✅ 데이터 로드 완료: {test_data_path.name}")
-                
-                # Validation 데이터의 배치 크기 확인
-                batch_size = problem['num_activities'].shape[0] if 'num_activities' in problem else 0
-                print(f"   📊 총 배치 수: {batch_size}")
-                
-                # 각 배치를 개별 인스턴스로 처리
-                for batch_idx in range(min(batch_size, TEST_FILE_END - TEST_FILE_START + 1)):
-                    instance_num = TEST_FILE_START + batch_idx
-                    print(f"\n   🔄 처리 중: Batch {batch_idx} (Instance {instance_num})")
-                    
-                    start_time = time.time()
-                    
-                    try:
-                        with torch.no_grad():
-                            # 단일 배치 환경 생성 - Test 모드는 무조건 CPU
-                            single_env_params = env_params.copy()
-                            single_env_params['batch_size'] = 1
-                            test_env = SchedulingEnv(single_env_params, debug_env=False, device='cpu')
-                            
-                            # 전체 problem에서 batch_idx만 추출하여 단일 배치 문제 생성
-                            single_problem = {}
-                            for key, value in problem.items():
-                                if isinstance(value, torch.Tensor) and value.shape[0] == batch_size:
-                                    single_problem[key] = value[batch_idx:batch_idx+1]
-                                else:
-                                    single_problem[key] = value
-                            
-                            test_env._reset(single_problem)
-                            
-                            # 모델에 action space 정보 전달
-                            action_to_pair, max_action_space = test_env.get_action_space_info()
-                            trainer.model.set_action_space(action_to_pair, max_action_space)
-                            
-                            done = False
-                            s = test_env._get_state()
-                            
-                            while not done:
-                                action = trainer.model.get_max_action(s)
-                                s, obj_value, done = test_env.step(action.to('cpu'))
-                            
-                            test_score = test_env.get_objective()
-                            if isinstance(test_score, torch.Tensor):
-                                test_score = test_score.mean().item()
-                        
-                        end_time = time.time()
-                        runtime = end_time - start_time
-                        
-                        result = {
-                            'algorithm': 'RL',
-                            'instance': instance_num,
-                            'objective_value': test_score,
-                            'runtime': runtime
-                        }
-                        rl_results.append(result)
-                        
-                        print(f"      [RL][Instance {instance_num}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
-                    
-                    except Exception as e:
-                        print(f"      ❌ [RL][Instance {instance_num}] 실행 중 오류: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        continue
-            
-            except Exception as e:
-                print(f"❌ 데이터 로드 실패: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        else:
-            # Test 모드: 번호별 개별 파일 처리
-            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+        # Test와 Validation 모두 동일한 형식: 개별 파일 (0.pickle, 1.pickle, ...)
+        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
                 data_path = data_base_dir / f"{i}.pickle"
                 if not data_path.exists():
                     print(f"⚠️  Warning: Data file not found: {data_path}")

@@ -848,70 +848,37 @@ class Scheduling_Trainer:
     
     def _prepare_validation_dataset(self, validation_batch_size=10, validation_pomo_size=1):
         """
-        고정된 validation 데이터셋 준비 (파일이 있으면 로드, 없으면 생성)
+        고정된 validation 데이터셋 준비 (개별 파일로 저장: 0.pickle, 1.pickle, ...)
         모든 epoch에서 동일한 데이터로 평가하기 위함
         
         Args:
-            validation_batch_size: Validation 배치 수
+            validation_batch_size: Validation 인스턴스 수
             validation_pomo_size: Validation POMO 크기 (보통 1)
         """
         # 시드 고정하여 재현 가능한 validation set 생성
         validation_seed = 2025
         
-        # Validation 데이터 파일 경로 (환경 설정 포함)
+        # Validation 데이터 폴더 경로
         val_data_folder = './data/val'
         os.makedirs(val_data_folder, exist_ok=True)
         
-        # 파일명에 주요 환경 파라미터 포함
-        n_p = self.env_params['N_P']
-        n_t = self.env_params['N_T']
-        n_a_min = self.env_params['N_A_min']
-        n_a_max = self.env_params['N_A_max']
-        objective = self.env_params.get('objective', 'tardiness')
-        
-        val_data_path = os.path.join(
-            val_data_folder, 
-            f"val_{objective}_P{n_p}_T{n_t}_A{n_a_min}-{n_a_max}_bs{validation_batch_size}_seed{validation_seed}.pickle"
+        # 모든 파일이 존재하는지 확인
+        all_files_exist = all(
+            os.path.exists(os.path.join(val_data_folder, f"{i}.pickle"))
+            for i in range(validation_batch_size)
         )
         
-        # 파일이 이미 존재하는지 확인
-        if os.path.exists(val_data_path):
-            print(f"📂 기존 Validation 데이터셋 로드 중...")
-            print(f"   파일 경로: {val_data_path}")
-            
-            try:
-                with open(val_data_path, 'rb') as f:
-                    validation_data = pickle.load(f)
-                
-                # validation_problem 추출 (validation_seed만 제외, env_params는 포함)
-                self.validation_problem = {k: v for k, v in validation_data.items() 
-                                          if k not in ['validation_seed']}
-                
-                # 배치 크기 확인
-                loaded_batch_size = validation_data.get('env_params', {}).get('batch_size', validation_batch_size)
-                loaded_seed = validation_data.get('validation_seed', 'unknown')
-                
-                print(f"✅ Validation 데이터셋 로드 완료")
-                print(f"   배치 크기: {loaded_batch_size}, 시드: {loaded_seed}")
-                
-                # 배치 크기가 다르면 경고
-                if loaded_batch_size != validation_batch_size:
-                    print(f"   ⚠️  요청한 배치 크기({validation_batch_size})와 파일의 배치 크기({loaded_batch_size})가 다릅니다.")
-                    print(f"   파일의 배치 크기를 사용합니다.")
-                
-                return
-                
-            except Exception as e:
-                print(f"   ❌ 파일 로드 실패: {e}")
-                print(f"   새로운 Validation 데이터셋을 생성합니다.")
+        if all_files_exist:
+            print(f"📂 기존 Validation 데이터셋 로드 (파일 개수: {validation_batch_size})")
+            print(f"   폴더: {val_data_folder}")
+            print(f"   파일: 0.pickle ~ {validation_batch_size-1}.pickle")
+            print(f"✅ Validation 데이터셋 로드 완료 (개별 파일 형식)")
+            # validation_problem은 None으로 설정 (개별 파일 사용)
+            self.validation_problem = None
+            return
         
-        # 파일이 없거나 로드 실패 시 새로 생성
-        print(f"📦 새로운 Validation 데이터셋 생성 중... (배치 크기: {validation_batch_size})")
-        
-        # Validation 환경 파라미터 설정
-        val_env_params = copy.deepcopy(self.env_params)
-        val_env_params['batch_size'] = validation_batch_size
-        val_env_params['pomo_size'] = validation_pomo_size
+        # 파일이 없으면 새로 생성
+        print(f"📦 새로운 Validation 데이터셋 생성 중... (인스턴스 수: {validation_batch_size})")
         
         # 모든 랜덤 시드 저장 (복원용)
         original_random_state = random.getstate()
@@ -927,8 +894,20 @@ class Scheduling_Trainer:
         if torch.cuda.is_available():
             torch.cuda.manual_seed(validation_seed)
         
-        # Validation 데이터 생성
-        self.validation_problem = generate_scheduling_data_batch(val_env_params)
+        # 각 인스턴스를 개별 파일로 생성
+        for i in range(validation_batch_size):
+            # 단일 배치 환경 파라미터
+            single_env_params = copy.deepcopy(self.env_params)
+            single_env_params['batch_size'] = 1
+            single_env_params['pomo_size'] = 1
+            
+            # 단일 인스턴스 데이터 생성
+            single_problem = generate_scheduling_data_batch(single_env_params)
+            
+            # 파일로 저장
+            file_path = os.path.join(val_data_folder, f"{i}.pickle")
+            with open(file_path, 'wb') as f:
+                pickle.dump(single_problem, f)
         
         # RNG 상태 복원
         random.setstate(original_random_state)
@@ -937,76 +916,85 @@ class Scheduling_Trainer:
         if torch.cuda.is_available():
             torch.cuda.set_rng_state(original_cuda_rng_state)
         
-        # 저장할 데이터 구성
-        validation_data = {
-            'env_params': val_env_params,
-            'validation_seed': validation_seed,  # 시드 정보도 저장
-            **self.validation_problem
-        }
-        
-        # 파일로 저장
-        with open(val_data_path, 'wb') as f:
-            pickle.dump(validation_data, f)
-        
         print(f"✅ Validation 데이터셋 생성 완료 (고정 시드: {validation_seed})")
-        print(f"💾 Validation 데이터셋 저장: {val_data_path}")
-        print(f"   ℹ️  다음 학습부터는 이 파일을 재사용합니다.")
+        print(f"💾 저장 위치: {val_data_folder}")
+        print(f"   파일: 0.pickle ~ {validation_batch_size-1}.pickle")
+        print(f"   ℹ️  다음 학습부터는 이 파일들을 재사용합니다.")
+        
+        # validation_problem은 None으로 설정 (개별 파일 사용)
+        self.validation_problem = None
     
     def _eval_validation(self, validation_batch_size=10, validation_pomo_size=1):
         """
-        Validation 평가 함수: 고정된 데이터로 모델 성능 평가 (Greedy policy)
+        Validation 평가 함수: 개별 파일로 저장된 데이터로 모델 성능 평가 (Greedy policy)
         
         Args:
-            validation_batch_size: Validation 배치 수
+            validation_batch_size: Validation 인스턴스 수
             validation_pomo_size: Validation POMO 크기 (보통 1)
         
         Returns:
             avg_score: 평균 validation score (목적함수값)
         """
-        if self.validation_problem is None:
-            raise RuntimeError("Validation 데이터셋이 준비되지 않았습니다. _prepare_validation_dataset()를 먼저 호출하세요.")
-        
         self.model.eval()
         
-        # Validation 환경 파라미터 설정
+        # Validation 데이터 폴더
+        val_data_folder = './data/val'
+        
+        # 단일 배치 환경 파라미터
         val_env_params = copy.deepcopy(self.env_params)
-        val_env_params['batch_size'] = validation_batch_size
-        val_env_params['pomo_size'] = validation_pomo_size
+        val_env_params['batch_size'] = 1
+        val_env_params['pomo_size'] = 1
         
-        # 고정된 validation 데이터로 환경 초기화 (device_mode에 따라)
+        # device_mode에 따라 환경 device 결정
         if self.device_mode == 'gpu':
-            val_env_device = self.device  # GPU 모드: 환경도 GPU
+            val_env_device = self.device
         else:
-            val_env_device = 'cpu'  # Hybrid/CPU 모드: 환경은 CPU
+            val_env_device = 'cpu'
         
-        val_env = SchedulingEnv(val_env_params, debug_env=False, device=val_env_device)
-        val_env._reset(self.validation_problem)
+        # 모든 validation 인스턴스 평가
+        obj_values = []
         
-        # 모델에 action space 정보 전달
-        action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
-        self.model.set_action_space(action_to_pair, max_action_space)
+        for i in range(validation_batch_size):
+            file_path = os.path.join(val_data_folder, f"{i}.pickle")
+            
+            # 파일 로드
+            with open(file_path, 'rb') as f:
+                problem = pickle.load(f)
+            
+            # 환경 초기화
+            val_env = SchedulingEnv(val_env_params, debug_env=False, device=val_env_device)
+            val_env._reset(problem)
+            
+            # 모델에 action space 정보 전달
+            action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
+            self.model.set_action_space(action_to_pair, max_action_space)
+            
+            done = False
+            s = val_env._get_state()
+            
+            with torch.no_grad():
+                while not done:
+                    # Greedy action 선택
+                    action = self.model.get_max_action(s)
+                    
+                    # device_mode에 따라 action을 환경 device로 이동
+                    if self.device_mode == 'gpu':
+                        s, obj_value, done = val_env.step(action)
+                    else:
+                        s, obj_value, done = val_env.step(action.to('cpu'))
+            
+            # 목적함수값 계산
+            obj_value = val_env._get_obj()
+            if isinstance(obj_value, torch.Tensor):
+                obj_values.append(obj_value.item())
+            else:
+                obj_values.append(obj_value)
         
-        done = False
-        s = val_env._get_state()
-        
-        with torch.no_grad():
-            while not done:
-                # Greedy action 선택
-                action = self.model.get_max_action(s)
-                
-                # device_mode에 따라 action을 환경 device로 이동
-                if self.device_mode == 'gpu':
-                    s, obj_value, done = val_env.step(action)
-                else:
-                    s, obj_value, done = val_env.step(action.to('cpu'))
-        
-        # 목적함수값 계산
-        obj_value = val_env._get_obj()
-        if isinstance(obj_value, torch.Tensor):
-            obj_value = obj_value.mean().item()
+        # 평균 계산
+        avg_obj_value = sum(obj_values) / len(obj_values)
         
         self.model.train()
-        return obj_value
+        return avg_obj_value
 
     def plot_score(self, valid_score, valid_loss):
         plt.figure()

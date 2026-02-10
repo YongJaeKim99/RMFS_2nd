@@ -217,7 +217,7 @@ class SchedulingEnv:
             valid_action_mask = act_ids >= 0  # (max_action_space,)
             
             # 초기 feasibility: False로 시작
-            feasible = torch.zeros(self.max_action_space, dtype=torch.bool)
+            feasible = torch.zeros(self.max_action_space, dtype=torch.bool, device=self.device)
             
             # 유효한 action만 처리
             valid_act_ids = act_ids[valid_action_mask]
@@ -240,7 +240,7 @@ class SchedulingEnv:
             basic_feasible = unstarted & project_released & team_available  # (num_valid_actions,)
             
             # 4. Predecessor 체크 (loop 필요)
-            pred_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool)
+            pred_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool, device=self.device)
             for i, act_id in enumerate(valid_act_ids):
                 if not basic_feasible[i]:
                     pred_feasible[i] = False
@@ -252,7 +252,7 @@ class SchedulingEnv:
                         pred_feasible[i] = False
             
             # 5. Mutex 체크 (loop 필요)
-            mutex_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool)
+            mutex_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool, device=self.device)
             for i, act_id in enumerate(valid_act_ids):
                 if not (basic_feasible[i] and pred_feasible[i]):
                     mutex_feasible[i] = False
@@ -291,7 +291,7 @@ class SchedulingEnv:
         team_id = self.action_to_pair[batch_indices, action, 1]        
         
         # Activity 스케줄링
-        active_batch_idxs = torch.arange(self.batch_size, device=self.done.device)[~self.done]
+        active_batch_idxs = torch.arange(self.batch_size, device=self.device)[~self.done]
         if len(active_batch_idxs) > 0:
             self._schedule_activity(active_batch_idxs, activity_id, team_id)
         
@@ -353,7 +353,7 @@ class SchedulingEnv:
         iterations = 0
 
         # 처리할 배치들 마스킹
-        batch_mask = torch.zeros(self.batch_size, dtype=torch.bool)
+        batch_mask = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
         batch_mask[batch_idxs] = True
 
         # 루프 시작 전 초기 액션 업데이트
@@ -396,7 +396,7 @@ class SchedulingEnv:
                     batches_to_advance.append(b_idx)
             
             if len(batches_to_advance) > 0:
-                batches_to_advance_tensor = torch.tensor(batches_to_advance, dtype=torch.long)
+                batches_to_advance_tensor = torch.tensor(batches_to_advance, dtype=torch.long, device=self.device)
                 self._advance_to_next_decision_event_for_batches(batches_to_advance_tensor)
                 self._update_available_actions(batches_to_advance_tensor)
             else:
@@ -468,13 +468,13 @@ class SchedulingEnv:
         
         # 0보다 큰 시간들만 고려 (진행 중인 activity만)
         # 0 이하인 값들을 매우 큰 값으로 대체
-        masked_times = torch.where(remaining_times > 0, remaining_times, torch.tensor(float('inf'), device=remaining_times.device))
+        masked_times = torch.where(remaining_times > 0, remaining_times, torch.tensor(float('inf'), device=self.device))
         
         # 각 배치별 최소값 계산 (가장 먼저 완료될 activity의 남은 시간)
         batch_mins, min_indices = masked_times.min(dim=1)  # (n_batches,)
         
         # inf인 경우 (진행 중인 activity가 없음) 0.0으로 대체
-        batch_mins = torch.where(batch_mins == float('inf'), torch.tensor(0.0, device=batch_mins.device), batch_mins)        
+        batch_mins = torch.where(batch_mins == float('inf'), torch.tensor(0.0, device=self.device), batch_mins)        
         
         return batch_mins
 
@@ -508,8 +508,8 @@ class SchedulingEnv:
         # 3. 프로젝트 완료 여부 확인 (완전 벡터화)
         # 각 배치의 각 프로젝트에 속한 모든 activity가 ended인지 확인
         
-        activity_indices = torch.arange(self.max_N_A, device=self.activity_project.device)
-        project_indices = torch.arange(self.N_P, device=self.activity_project.device)
+        activity_indices = torch.arange(self.max_N_A, device=self.device)
+        project_indices = torch.arange(self.N_P, device=self.device)
         
         # 선택된 배치들만 추출
         selected_activity_project = self.activity_project[batch_idxs]  # (n_batch, max_N_A)
@@ -544,11 +544,11 @@ class SchedulingEnv:
         # 각 프로젝트에 속한 activity의 최대 end_time
         
         # 프로젝트별 activity 마스크 (batch_size, N_P, max_N_A)
-        project_indices = torch.arange(self.N_P, device=self.activity_project.device)
+        project_indices = torch.arange(self.N_P, device=self.device)
         proj_mask = (self.activity_project.unsqueeze(1) == project_indices.view(1, -1, 1))  # (batch_size, N_P, max_N_A)
         
         # 유효한 activity 마스크 (batch_size, max_N_A)
-        activity_indices = torch.arange(self.max_N_A, device=self.activity_project.device)
+        activity_indices = torch.arange(self.max_N_A, device=self.device)
         valid_mask = activity_indices.unsqueeze(0) < self.num_activities.unsqueeze(1)  # (batch_size, max_N_A)
         
         # 프로젝트에 속하고 유효한 activity만 선택 (batch_size, N_P, max_N_A)
@@ -559,7 +559,7 @@ class SchedulingEnv:
         masked_end_time = torch.where(
             proj_valid_mask,
             end_time_3d,
-            torch.tensor(-float('inf'), device=end_time_3d.device)
+            torch.tensor(-float('inf'), device=self.device)
         )
         
         # 각 프로젝트별 최대값 (batch_size, N_P)
@@ -568,7 +568,7 @@ class SchedulingEnv:
         # -inf는 0으로 처리 (프로젝트에 activity가 없는 경우)
         project_completion_time = torch.where(
             torch.isinf(project_completion_time),
-            torch.tensor(0.0, device=project_completion_time.device),
+            torch.tensor(0.0, device=self.device),
             project_completion_time
         )
         
@@ -584,7 +584,7 @@ class SchedulingEnv:
             obj = project_completion_time.max(dim=1)[0]  # (batch_size,)
         
         else:
-            obj = torch.zeros(self.batch_size, device=self.activity_end_time.device)
+            obj = torch.zeros(self.batch_size, device=self.device)
         
         return obj
     
