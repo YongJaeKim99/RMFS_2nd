@@ -438,7 +438,7 @@ class Scheduling_Trainer:
         env._reset(problem)
         
         # 모델에 action space 정보 전달 (초기화 시 한 번만)
-        action_to_pair, max_action_space = env.get_action_space_info()
+        action_to_pair, max_action_space = env.action_to_pair, env.max_action_space
         self.model.set_action_space(action_to_pair, max_action_space)
         
         done = False

@@ -152,25 +152,7 @@ class SchedulingEnv:
         self._initialize_action_space()
         
         # (batch_size, max_action_space) - 가능한 action은 True
-        self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool)
-        
-        # ========================================
-        # 디버깅 정보
-        # ========================================
-        if self.debug_env:
-            print(f"\n🔄 환경 리셋 완료")
-            print(f"   Max Activities: {self.max_N_A}")
-            print(f"   Batch 0 Activities: {self.num_activities[0].item()}")
-            
-            # 첫 번째 배치의 프로젝트 정보 출력
-            if self.batch_size > 0:
-                print(f"\n   📊 Batch 0 Projects:")
-                for p in range(self.N_P):
-                    release = self.project_release_time[0, p].item()
-                    due = self.project_due_date[0, p].item()
-                    # 프로젝트별 activity 수 계산
-                    proj_activities = (self.activity_project[0] == p).sum().item()
-                    print(f"      Project {p}: {proj_activities} activities, Release={release}, Due={due}")
+        self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool)        
         
         # ========================================
         # 초기 가능한 액션 업데이트
@@ -550,20 +532,6 @@ class SchedulingEnv:
                 newly_completed = proj_all_completed & ~self.project_completed[b_item]
                 self.project_completed[b_item] |= newly_completed
                 
-                # 디버깅
-                if self.debug_env and b_item == 0:
-                    newly_completed_projs = newly_completed.nonzero(as_tuple=False).squeeze(-1)
-                    for p_idx in newly_completed_projs:
-                        p_idx_item = p_idx.item()
-                        completion_time = self.project_completion_time[b_item, p_idx_item].item()
-                        due_date = self.project_due_date[b_item, p_idx_item].item()
-                        tardiness = max(0, completion_time - due_date)
-                        print(f"   🎉 Project {p_idx_item} completed! Time={completion_time:.1f}, Due={due_date}, Tardiness={tardiness:.1f}")
-                    
-                    if len(completed_acts) > 0:
-                        act_id = completed_acts[0].item()
-                        end_time = self.activity_end_time[b_item, act_id].item()
-                        print(f"   ✅ Activity {act_id} completed at t={end_time:.1f}")
 
     def get_next_move_t(self, batch_idxs):
         """
@@ -638,15 +606,11 @@ class SchedulingEnv:
                 due_date = self.project_due_date[batch_idx, proj_id].item()
                 tardiness = max(0, completion_time - due_date)
                 print(f"   🎉 Project {proj_id} completed! Time={completion_time:.1f}, Due={due_date}, Tardiness={tardiness:.1f}")
-        
-        if self.debug_env and batch_idx == 0:
-            end_time = self.activity_end_time[batch_idx, activity_id].item()
-            print(f"   ✅ Activity {activity_id} completed at t={end_time:.1f}")
     
     
     def _get_obj(self):
         """
-        목적함수값 계산 (벡터화 버전, 테스트용)
+        목적함수값 계산
         
         Returns:
             obj: (batch_size,) - 목적함수값 (작을수록 좋음)
@@ -786,99 +750,3 @@ class SchedulingEnv:
             return obj[0].item()
         else:
             return obj
-    
-    def get_action_space_info(self):
-        """
-        Action space 정보 반환 (모델 초기화용)
-        
-        Returns:
-            action_to_pair: (batch_size, max_action_space, 2) - action index → (activity, team) 매핑
-            max_action_space: int - 배치 내 최대 action space 크기
-        """
-        return self.action_to_pair, self.max_action_space
-
-
-# ========================================
-# 테스트 코드
-# ========================================
-if __name__ == "__main__":
-    print("="*60)
-    print("SchedulingEnv 테스트")
-    print("="*60)
-    
-    # 환경 파라미터
-    env_params = {
-        'batch_size': 2,
-        'pomo_size': 1,
-        'N_P': 3,
-        'N_A_min': 3,
-        'N_A_max': 5,
-        'N_T': 3,
-        'duration_min': 2,
-        'duration_max': 5,
-        'precedence_prob': 0.3,
-        'mutex_prob': 0.1,
-        'eligible_teams_ratio': 0.6,
-        'due_date_tightness': 1.3,
-        'objective': 'tardiness',
-        'debug_env': True,
-    }
-    
-    # 환경 생성
-    env = SchedulingEnv(env_params, debug_env=True)
-    
-    # 리셋
-    env._reset()
-    
-    # 초기 상태 확인
-    state = env._get_state()
-    print(f"\n초기 상태: {len(state)}개 배치")
-    print(f"Batch 0 노드 수: {state[0].x.shape[0]}")
-    print(f"Batch 0 엣지 수: {state[0].edge_index.shape[1]}")
-    
-    # 가능한 액션 확인
-    env._update_available_actions(env.BATCH_IDX)
-    num_feasible = env.available_actions.sum(dim=1)
-    print(f"\n가능한 action 수: {num_feasible[0].item()}")
-    print(f"전체 action space 크기: {env.max_action_space}")
-    
-    # 랜덤 액션 수행 (에피소드 끝까지)
-    import random
-    step = 0
-    max_steps = 100
-    
-    while not env.done.all() and step < max_steps:
-        # 가능한 액션 선택
-        active_batch_idxs = torch.arange(env.batch_size)[~env.done]
-        if len(active_batch_idxs) > 0:
-            env._update_available_actions(active_batch_idxs)
-        
-        actions = []
-        for b in range(env.batch_size):
-            if env.done[b]:
-                actions.append(0)  # 더미
-            else:
-                # 가능한 액션 중 랜덤 선택
-                feasible_actions = env.available_actions[b].nonzero(as_tuple=False).squeeze(-1)
-                if len(feasible_actions) > 0:
-                    action_idx = random.choice(feasible_actions).item()
-                    actions.append(action_idx)
-                else:
-                    actions.append(0)  # 가능한 액션이 없으면 더미
-        
-        actions = torch.tensor(actions, dtype=torch.long)
-        
-        # Step
-        next_state, reward, done = env.step(actions)
-        
-        step += 1
-    
-    # 최종 결과
-    print(f"\n{'='*60}")
-    print("시뮬레이션 완료!")
-    print(f"{'='*60}")
-    print(f"총 스텝: {step}")
-    print(f"최종 시뮬레이션 시간: {env.sim_time[0].item():.1f}")
-    print(f"목적함수 ({env.objective}): {env.get_objective()}")
-    
-    print("\n✅ SchedulingEnv 테스트 완료!")
