@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # 옵티마이저 파라미터
     optimizer_params = {
         'optimizer': {
-            'lr': 1e-4,
+            'lr': 3e-5,
             'weight_decay': 1e-6,
         }
     }    
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     # 트레이너 파라미터 설정
     trainer_params = {
         'epochs': EPOCHS,
-        'accumulation_steps': 1,
+        'accumulation_steps': 4,
         'grad_clip_norm': 1.0,
         'entropy_coef': ENTROPY_COEF if USE_ENTROPY_REG else 0.0,
         'baseline_type': BASELINE_TYPE,

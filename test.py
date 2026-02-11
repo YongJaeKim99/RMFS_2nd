@@ -13,6 +13,7 @@ import random
 from trainer import Scheduling_Trainer
 from scheduling_env import SchedulingEnv
 from GA import GeneticAlgorithm, Activity, Project
+from gantt_chart import create_gantt_chart_from_env, create_gantt_chart_from_ga_solution, create_precedence_graph
 
 # -----------------------------
 # 0) CPU 디바이스로 고정 (추론 시에는 CPU로)
@@ -35,11 +36,11 @@ if __name__ == "__main__":
     # -----------------------------
     # 체크포인트 폴더 이름 (checkpoints/ 아래의 폴더명)
     # 예: "20260210_130751_tardiness_REINFORCE"
-    CHECKPOINT_FOLDER = "20260210_130751_tardiness_REINFORCE"
+    CHECKPOINT_FOLDER = "20260210_175204_tardiness_REINFORCE"
     
     # 특정 체크포인트 파일 이름 (None이면 자동 선택)
     # 예: "scheduling_epoch100.pt" 또는 None
-    CHECKPOINT_FILE = "pomo_rss_epoch25.pt"
+    CHECKPOINT_FILE = "epoch0.pt"
     
     # 모든 체크포인트에 대해 실험할지 여부
     # True: 폴더 내 모든 체크포인트 테스트
@@ -51,12 +52,20 @@ if __name__ == "__main__":
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["RL","GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
     GA_POPULATION_SIZE = 50
     GA_GENERATIONS = 300
     GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
+    
+    # -----------------------------
+    # 간트차트 생성 설정
+    # -----------------------------
+    #SAVE_GANTT_CHART = False  # True: 간트차트 생성, False: 생성 안 함
+    #SHOW_GANTT_CHART = False  # True: 브라우저에서 표시, False: 저장만
+    SAVE_GANTT_CHART = True
+    SHOW_GANTT_CHART = True
     
     # =================================================================
     # 🎯 목적함수 선택
@@ -75,7 +84,7 @@ if __name__ == "__main__":
     # - 'test' 모드: TEST_FILE_START.pickle ~ TEST_FILE_END.pickle
     # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
     TEST_FILE_START = 0
-    TEST_FILE_END = 49
+    TEST_FILE_END = 0
     
     # -----------------------------
     # 3) 기타 설정
@@ -110,6 +119,9 @@ if __name__ == "__main__":
         print(f"     - Population: {GA_POPULATION_SIZE}")
         print(f"     - Generations: {GA_GENERATIONS}")
         print(f"     - Decode Mode: {GA_DECODE_MODE}")
+    print(f"  📌 SAVE_GANTT_CHART: {SAVE_GANTT_CHART}")
+    if SAVE_GANTT_CHART:
+        print(f"     - Show in Browser: {SHOW_GANTT_CHART}")
     print("="*50 + "\n")
     
     # =================================================================
@@ -180,6 +192,13 @@ if __name__ == "__main__":
     if not session_results_dir.exists():
         session_results_dir.mkdir(parents=True)
         print(f"✅ 결과 저장 폴더 생성: {session_results_dir}")
+    
+    # 간트차트 저장 폴더 생성
+    gantt_dir = None
+    if SAVE_GANTT_CHART:
+        gantt_dir = session_results_dir / "gantt_charts"
+        gantt_dir.mkdir(parents=True, exist_ok=True)
+        print(f"✅ 간트차트 저장 폴더 생성: {gantt_dir}")
     
     def save_results_to_excel(all_results, algorithm, checkpoint_name):
         """결과를 엑셀 파일로 저장"""
@@ -317,6 +336,9 @@ if __name__ == "__main__":
     algorithm_summaries = {}
     saved_files = []
     
+    # 선후관계 그래프 생성 추적 (인스턴스당 한 번만)
+    precedence_graphs_created = set()
+    
     # GA 실행 (RL과 독립적)
     if "GA" in test_algorithms:
         print(f"\n{'='*60}")
@@ -371,6 +393,44 @@ if __name__ == "__main__":
                     ga_results.append(result)
                     
                     print(f"   [GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
+                    
+                    # 간트차트 및 선후관계 그래프 생성
+                    if SAVE_GANTT_CHART:
+                        try:
+                            # project_due_dates 추출
+                            project_due_dates = {proj.id: proj.due_date for proj in ga.projects}
+                            
+                            # 간트차트 생성 (알고리즘별)
+                            create_gantt_chart_from_ga_solution(
+                                solution=best_solution,
+                                activity_to_project=ga.activity_to_project,
+                                num_teams=env_params['N_T'],
+                                instance_name=f"instance_{i}",
+                                objective_value=objective_value,
+                                project_due_dates=project_due_dates,
+                                save_dir=gantt_dir,
+                                show=SHOW_GANTT_CHART
+                            )
+                            
+                            # 선후관계 그래프 생성 (인스턴스당 한 번만)
+                            if i not in precedence_graphs_created:
+                                activity_predecessors = {}
+                                activity_mutex = {}
+                                for act in ga.activities:
+                                    activity_predecessors[act.id] = act.predecessors
+                                    activity_mutex[act.id] = act.mutually_exclusive
+                                
+                                create_precedence_graph(
+                                    activity_predecessors=activity_predecessors,
+                                    activity_mutex=activity_mutex,
+                                    activity_to_project=ga.activity_to_project,
+                                    instance_name=f"instance_{i}",
+                                    save_dir=gantt_dir,
+                                    show=SHOW_GANTT_CHART
+                                )
+                                precedence_graphs_created.add(i)
+                        except Exception as e:
+                            print(f"   ⚠️ 간트차트/그래프 생성 실패: {e}")
                 
                 except Exception as e:
                     print(f"   ❌ [GA][Instance {i}] 실행 중 오류: {e}")
@@ -446,7 +506,7 @@ if __name__ == "__main__":
                         test_env._reset(problem)
                         
                         # 모델에 action space 정보 전달
-                        action_to_pair, max_action_space = test_env.get_action_space_info()
+                        action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
                         trainer.model.set_action_space(action_to_pair, max_action_space)
                         
                         done = False
@@ -456,7 +516,7 @@ if __name__ == "__main__":
                             action = trainer.model.get_max_action(s)
                             s, obj_value, done = test_env.step(action.to('cpu'))
                         
-                        test_score = test_env.get_objective()
+                        test_score = test_env._get_obj()
                         if isinstance(test_score, torch.Tensor):
                             test_score = test_score.mean().item()
                     
@@ -472,6 +532,50 @@ if __name__ == "__main__":
                     rl_results.append(result)
                     
                     print(f"   [RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
+                    
+                    # 간트차트 및 선후관계 그래프 생성
+                    if SAVE_GANTT_CHART:
+                        try:
+                            # 간트차트 생성 (알고리즘별)
+                            create_gantt_chart_from_env(
+                                env=test_env,
+                                instance_name=f"instance_{i}",
+                                algorithm="RL",
+                                objective_value=test_score,
+                                save_dir=gantt_dir,
+                                show=SHOW_GANTT_CHART
+                            )
+                            
+                            # 선후관계 그래프 생성 (인스턴스당 한 번만)
+                            if i not in precedence_graphs_created:
+                                num_act = test_env.num_activities[0].item()
+                                activity_predecessors = {}
+                                activity_mutex = {}
+                                activity_to_project = {}
+                                
+                                for act_id in range(num_act):
+                                    # predecessors 추출
+                                    preds = test_env.activity_predecessors[0, act_id].cpu().numpy().tolist()
+                                    activity_predecessors[act_id] = [p for p in preds if p >= 0]
+                                    
+                                    # mutex 추출
+                                    mutex = test_env.activity_mutex[0, act_id].cpu().numpy().tolist()
+                                    activity_mutex[act_id] = [m for m in mutex if m >= 0]
+                                    
+                                    # project 매핑
+                                    activity_to_project[act_id] = test_env.activity_project[0, act_id].item()
+                                
+                                create_precedence_graph(
+                                    activity_predecessors=activity_predecessors,
+                                    activity_mutex=activity_mutex,
+                                    activity_to_project=activity_to_project,
+                                    instance_name=f"instance_{i}",
+                                    save_dir=gantt_dir,
+                                    show=SHOW_GANTT_CHART
+                                )
+                                precedence_graphs_created.add(i)
+                        except Exception as e:
+                            print(f"   ⚠️ 간트차트/그래프 생성 실패: {e}")
                 
                 except Exception as e:
                     print(f"   ❌ [RL][Instance {i}] 실행 중 오류: {e}")
