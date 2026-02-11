@@ -1,0 +1,31 @@
+{
+  "os": "Windows-11-10.0.26100-SP0",
+  "python": "CPython 3.12.9",
+  "startedAt": "2026-02-11T09:19:41.635498Z",
+  "program": "c:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\train.py",
+  "codePath": "train.py",
+  "git": {
+    "remote": "https://github.com/YongJaeKim99/RCMPSP_1st.git",
+    "commit": "a82a666348d12732acd8a568dfee8021d5a33ac0"
+  },
+  "email": "yongjae9@kaist.ac.kr",
+  "root": "C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code",
+  "host": "DESKTOP-J3NHCCN",
+  "executable": "C:\\Users\\YongJae\\anaconda3\\envs\\RSS_1st\\python.exe",
+  "codePathLocal": "train.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 20,
+  "disk": {
+    "/": {
+      "total": "499076034560",
+      "used": "358210179072"
+    }
+  },
+  "memory": {
+    "total": "68472336384"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 20
+  }
+}

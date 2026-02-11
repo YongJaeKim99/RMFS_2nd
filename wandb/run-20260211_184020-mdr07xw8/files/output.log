@@ -1,0 +1,48 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 245, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 219, in run
+    val_obj_avg = self._eval_validation(validation_batch_size, validation_pomo_size)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 978, in _eval_validation
+    action = self.model.get_max_action(s)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 184, in get_max_action
+    action_logits = self.forward(s)
+                    ^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 63, in forward
+    action_logits = self.gnn_model(state.x, state.edge_index, state)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\gnn_model.py", line 297, in forward
+    out = self.gat_layers[layer](emd, edge_index, edge_attr=edge_attr)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\gatv2_conv.py", line 325, in forward
+    alpha = self.edge_updater(edge_index, x=(x_l, x_r),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\AppData\Local\Temp\torch_geometric.nn.conv.gatv2_conv_GATv2Conv_edge_updater_qn57o7sm.py", line 145, in edge_updater
+    kwargs = self.edge_collect(
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\AppData\Local\Temp\torch_geometric.nn.conv.gatv2_conv_GATv2Conv_edge_updater_qn57o7sm.py", line 91, in edge_collect
+    x_j = self._index_select(_x_0, edge_index_j)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\message_passing.py", line 267, in _index_select
+    return self._index_select_safe(src, index)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch_geometric\nn\conv\message_passing.py", line 271, in _index_select_safe
+    return src.index_select(self.node_dim, index)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

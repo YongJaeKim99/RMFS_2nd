@@ -64,6 +64,9 @@ class SchedulingEnv:
         # 목적함수
         self.objective = env_params.get('objective', 'tardiness')  # 'tardiness' or 'makespan'
         
+        # 상태 출력 모드: 'pyg' (GNN 모델) 또는 'daniel' (DANIEL 모델)
+        self.state_mode = env_params.get('state_mode', 'pyg')
+        
         # 문제 데이터 (reset에서 초기화)
         self.problem = None
         self.max_N_A = None  # 최대 activity 수
@@ -147,6 +150,9 @@ class SchedulingEnv:
         # Action space 초기화: eligible한 (activity, team) 조합만 고려
         self._initialize_action_space()
         
+        # Static edge 사전 구축 (PyG 모드에서 사용)
+        self._precompute_static_edges()
+        
         # (batch_size, max_action_space) - 가능한 action은 True
         self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool, device=self.device)        
         
@@ -158,119 +164,248 @@ class SchedulingEnv:
     def _initialize_action_space(self):
         """
         각 배치별로 eligible한 (activity, team) 조합만 추출하여 action space 구성
-        배치 내 최대 action space 크기에 맞춰 패딩 적용
+        배치 내 최대 action space 크기에 맞춰 패딩 적용 (완전 벡터화 -- for문 0개)
         """
-        # 각 배치별로 eligible한 action 목록 생성
-        action_space_sizes = []
-        action_mappings = []  # 각 배치의 (action_idx → (activity, team)) 매핑
+        B = self.batch_size
+        N_T = self.N_T
         
-        for b in range(self.batch_size):
-            eligible_actions = []  # [(activity_id, team_id), ...]
+        # Valid activity mask (패딩 제외)
+        act_indices = torch.arange(self.max_N_A, device=self.device).unsqueeze(0)  # (1, max_N_A)
+        valid_act = act_indices < self.num_activities.unsqueeze(1)  # (B, max_N_A)
+        
+        # Eligible mask: valid activity AND eligible team
+        eligible = self.activity_eligible_teams & valid_act.unsqueeze(2)  # (B, max_N_A, N_T)
+        
+        # Flatten to (B, max_N_A * N_T) -- flat_idx = act_id * N_T + team_id
+        eligible_flat = eligible.reshape(B, -1)  # (B, max_N_A * N_T)
+        
+        # Max action space = max eligible pairs across batches
+        action_counts = eligible_flat.sum(dim=1)  # (B,)
+        self.max_action_space = max(action_counts.max().item(), 1)  # 최소 1
+        
+        # Initialize action_to_pair with -1 padding
+        self.action_to_pair = torch.full(
+            (B, self.max_action_space, 2), -1, dtype=torch.long, device=self.device
+        )
+        
+        # Get all (batch, flat_index) positions where eligible
+        batch_idx, flat_idx = eligible_flat.nonzero(as_tuple=True)
+        
+        if len(batch_idx) == 0:
+            return
+        
+        # Convert flat index -> (activity_id, team_id)
+        act_ids = flat_idx // N_T
+        team_ids = flat_idx % N_T
+        
+        # Compute per-batch sequential index (vectorized cumcount)
+        # batch_idx is sorted since nonzero preserves row-major order
+        batch_counts = torch.bincount(batch_idx, minlength=B)  # (B,)
+        batch_starts = torch.zeros(B, dtype=torch.long, device=self.device)
+        if B > 1:
+            batch_starts[1:] = batch_counts[:-1].cumsum(0)
+        
+        global_idx = torch.arange(len(batch_idx), dtype=torch.long, device=self.device)
+        seq_idx = global_idx - batch_starts[batch_idx]
+        
+        # Scatter into action_to_pair
+        self.action_to_pair[batch_idx, seq_idx, 0] = act_ids
+        self.action_to_pair[batch_idx, seq_idx, 1] = team_ids
+    
+    def _precompute_static_edges(self):
+        """
+        _reset() 시점에 static 그래프 구조(edge_index, edge_type)를 사전 구축.
+        에피소드 중 변하지 않는 엣지 구조를 미리 계산하여 _get_state_pyg()에서 재사용.
+        
+        각 배치별로 다음 엣지 타입을 사전 구축:
+            0 = Precedence (pred -> act, 단방향)
+            1 = Mutex (act <-> act, 양방향)
+            2 = Eligible (act <-> team, 양방향)
+            3 = Belongs-to (act <-> project, 양방향)
+        """
+        B = self.batch_size
+        self.static_edges = []
+        
+        for b in range(B):
             num_act = self.num_activities[b].item()
+            edges_src = []
+            edges_dst = []
+            edge_types = []  # 0=precedence, 1=mutex, 2=eligible, 3=belongs_to
             
-            for act_id in range(num_act):
-                # 해당 activity의 eligible teams 찾기
-                eligible_teams = self.activity_eligible_teams[b, act_id]  # (N_T,)
-                eligible_team_ids = eligible_teams.nonzero(as_tuple=False).squeeze(-1)  # eligible한 team ID들
-                
-                for team_id in eligible_team_ids:
-                    eligible_actions.append((act_id, team_id.item()))
+            # --- 동적 edge_attr 계산을 위한 메타데이터 ---
+            mutex_act1_list = []
+            mutex_act2_list = []
+            eligible_act_list = []
+            eligible_team_list = []
             
-            action_space_sizes.append(len(eligible_actions))
-            action_mappings.append(eligible_actions)
-        
-        # 배치 내 최대 action space 크기
-        self.max_action_space = max(action_space_sizes)
-        
-        # Action index → (activity, team) 매핑 텐서 생성 (패딩 포함)
-        # shape: (batch_size, max_action_space, 2) where [:, :, 0] = activity_id, [:, :, 1] = team_id
-        self.action_to_pair = torch.full((self.batch_size, self.max_action_space, 2), -1, dtype=torch.long, device=self.device)
-        
-        for b in range(self.batch_size):
-            for action_idx, (act_id, team_id) in enumerate(action_mappings[b]):
-                self.action_to_pair[b, action_idx, 0] = act_id
-                self.action_to_pair[b, action_idx, 1] = team_id
+            # 1. Precedence edges: pred_id -> act_id (단방향)
+            preds = self.activity_predecessors[b, :num_act]  # (num_act, max_preds)
+            valid_pred = preds >= 0
+            act_coords, slot_coords = valid_pred.nonzero(as_tuple=True)
+            if len(act_coords) > 0:
+                pred_ids = preds[act_coords, slot_coords]
+                in_range = pred_ids < num_act
+                if in_range.any():
+                    src = pred_ids[in_range]
+                    dst = act_coords[in_range]
+                    edges_src.append(src)
+                    edges_dst.append(dst)
+                    edge_types.append(torch.zeros(len(src), dtype=torch.long, device=self.device))
+            
+            # 2. Mutex edges: 양방향 (deduplicated by act1 < act2)
+            mutex_data = self.activity_mutex[b, :num_act]  # (num_act, max_mutex)
+            valid_mutex = mutex_data >= 0
+            act_coords_m, slot_coords_m = valid_mutex.nonzero(as_tuple=True)
+            if len(act_coords_m) > 0:
+                mutex_ids = mutex_data[act_coords_m, slot_coords_m]
+                dedup = (mutex_ids > act_coords_m) & (mutex_ids < num_act)
+                if dedup.any():
+                    a1 = act_coords_m[dedup]
+                    a2 = mutex_ids[dedup]
+                    edges_src.append(torch.cat([a1, a2]))
+                    edges_dst.append(torch.cat([a2, a1]))
+                    n_pairs = dedup.sum().item()
+                    edge_types.append(torch.ones(n_pairs * 2, dtype=torch.long, device=self.device))
+                    mutex_act1_list.append(torch.cat([a1, a2]))
+                    mutex_act2_list.append(torch.cat([a2, a1]))
+            
+            # 3. Eligible edges: 양방향 (act <-> team_node)
+            elig = self.activity_eligible_teams[b, :num_act]  # (num_act, N_T)
+            act_coords_e, team_coords_e = elig.nonzero(as_tuple=True)
+            if len(act_coords_e) > 0:
+                team_node_ids = (num_act + team_coords_e).long()
+                edges_src.append(torch.cat([act_coords_e, team_node_ids]))
+                edges_dst.append(torch.cat([team_node_ids, act_coords_e]))
+                n_elig = len(act_coords_e) * 2
+                edge_types.append(torch.full((n_elig,), 2, dtype=torch.long, device=self.device))
+                eligible_act_list.append(torch.cat([act_coords_e, act_coords_e]))
+                eligible_team_list.append(torch.cat([team_coords_e, team_coords_e]))
+            
+            # 4. Belongs-to edges: 양방향 (act <-> proj_node)
+            proj_ids = self.activity_project[b, :num_act]  # (num_act,)
+            act_ids_bt = torch.arange(num_act, device=self.device)
+            proj_node_ids = (num_act + self.N_T + proj_ids).long()
+            edges_src.append(torch.cat([act_ids_bt, proj_node_ids]))
+            edges_dst.append(torch.cat([proj_node_ids, act_ids_bt]))
+            edge_types.append(torch.full((num_act * 2,), 3, dtype=torch.long, device=self.device))
+            
+            # Concatenate all edges
+            if edges_src:
+                all_src = torch.cat(edges_src)
+                all_dst = torch.cat(edges_dst)
+                edge_index = torch.stack([all_src, all_dst], dim=0).long()  # (2, E)
+                edge_type = torch.cat(edge_types)  # (E,)
+            else:
+                edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
+                edge_type = torch.empty(0, dtype=torch.long, device=self.device)
+            
+            # Mutex metadata
+            mutex_act1 = torch.cat(mutex_act1_list) if mutex_act1_list else torch.empty(0, dtype=torch.long, device=self.device)
+            mutex_act2 = torch.cat(mutex_act2_list) if mutex_act2_list else torch.empty(0, dtype=torch.long, device=self.device)
+            
+            # Eligible metadata
+            eligible_act = torch.cat(eligible_act_list) if eligible_act_list else torch.empty(0, dtype=torch.long, device=self.device)
+            eligible_team = torch.cat(eligible_team_list) if eligible_team_list else torch.empty(0, dtype=torch.long, device=self.device)
+            
+            self.static_edges.append({
+                'edge_index': edge_index,
+                'edge_type': edge_type,
+                'num_nodes': num_act + self.N_T + self.N_P,
+                'num_act': num_act,
+                'mutex_act1': mutex_act1,
+                'mutex_act2': mutex_act2,
+                'eligible_act': eligible_act,
+                'eligible_team': eligible_team,
+            })
     
     def _update_available_actions(self, batch_idxs):
         """
-        가능한 모든 액션을 self 변수에 저장 (벡터화)
-        현재 시점에서 시작 가능한 (activity, team) 페어를 계산하여 self.available_actions에 저장
+        가능한 모든 액션의 feasibility를 계산하여 self.available_actions에 저장 (완전 벡터화 -- for문 0개)
+        gather + clamp(min=0) 패턴으로 -1 패딩을 안전하게 처리
         
         Args:
             batch_idxs: (n_active,) - 업데이트할 배치 인덱스들
         """
+        B = len(batch_idxs)
+        A = self.max_action_space
+        
         # 지정된 배치들의 모든 액션 마스크를 False로 초기화
         self.available_actions[batch_idxs] = False
         
-        for b in batch_idxs:
-            b_item = b.item() if torch.is_tensor(b) else b
-            
-            current_time = self.sim_time[b_item].item()
-            num_act = self.num_activities[b_item].item()
-            
-            # 벡터화: action_to_pair에서 act_id와 team_id 추출
-            action_pairs = self.action_to_pair[b_item]  # (max_action_space, 2)
-            act_ids = action_pairs[:, 0]  # (max_action_space,)
-            team_ids = action_pairs[:, 1]  # (max_action_space,)
-            
-            # 패딩된 action 마스크 (act_id >= 0인 것만 유효)
-            valid_action_mask = act_ids >= 0  # (max_action_space,)
-            
-            # 초기 feasibility: False로 시작
-            feasible = torch.zeros(self.max_action_space, dtype=torch.bool, device=self.device)
-            
-            # 유효한 action만 처리
-            valid_act_ids = act_ids[valid_action_mask]
-            valid_team_ids = team_ids[valid_action_mask]
-            
-            if len(valid_act_ids) == 0:
-                continue
-            
-            # 1. 시작 안 된 activity 체크 (벡터화)
-            unstarted = ~self.activity_started[b_item, valid_act_ids]  # (num_valid_actions,)
-            
-            # 2. 프로젝트 release 시간 체크 (벡터화)
-            proj_ids = self.activity_project[b_item, valid_act_ids]
-            project_released = self.project_release_time[b_item, proj_ids] <= current_time
-            
-            # 3. 팀 가용성 체크 (벡터화)
-            team_available = self.team_available_time[b_item, valid_team_ids] <= current_time
-            
-            # 기본 조건 결합
-            basic_feasible = unstarted & project_released & team_available  # (num_valid_actions,)
-            
-            # 4. Predecessor 체크 (loop 필요)
-            pred_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool, device=self.device)
-            for i, act_id in enumerate(valid_act_ids):
-                if not basic_feasible[i]:
-                    pred_feasible[i] = False
-                    continue
-                predecessors = self.activity_predecessors[b_item, act_id]
-                valid_preds = predecessors[predecessors >= 0]
-                if len(valid_preds) > 0:
-                    if not self.activity_ended[b_item, valid_preds].all():
-                        pred_feasible[i] = False
-            
-            # 5. Mutex 체크 (loop 필요)
-            mutex_feasible = torch.ones(len(valid_act_ids), dtype=torch.bool, device=self.device)
-            for i, act_id in enumerate(valid_act_ids):
-                if not (basic_feasible[i] and pred_feasible[i]):
-                    mutex_feasible[i] = False
-                    continue
-                mutex_activities = self.activity_mutex[b_item, act_id]
-                valid_mutex = mutex_activities[mutex_activities >= 0]
-                if len(valid_mutex) > 0:
-                    mutex_running = (self.activity_started[b_item, valid_mutex] & 
-                                   ~self.activity_ended[b_item, valid_mutex]).any()
-                    if mutex_running:
-                        mutex_feasible[i] = False
-            
-            # 모든 조건 결합
-            final_feasible = basic_feasible & pred_feasible & mutex_feasible
-            
-            # 결과를 available_actions에 저장
-            feasible[valid_action_mask] = final_feasible
-            self.available_actions[b_item] = feasible
+        # action_to_pair에서 act_id와 team_id 추출
+        atp = self.action_to_pair[batch_idxs]  # (B, A, 2)
+        act_ids = atp[:, :, 0]  # (B, A)
+        team_ids = atp[:, :, 1]  # (B, A)
+        
+        # Valid action mask (non-padding, act_id >= 0)
+        valid = act_ids >= 0  # (B, A)
+        
+        # Safe indices for gather (clamp -1 to 0, will be masked out by 'valid')
+        safe_act = act_ids.clamp(min=0)  # (B, A)
+        safe_team = team_ids.clamp(min=0)  # (B, A)
+        
+        # Current time
+        current_times = self.sim_time[batch_idxs].unsqueeze(1)  # (B, 1)
+        
+        # 1. Unstarted check -- gather activity_started at action's activity
+        started = self.activity_started[batch_idxs]  # (B, max_N_A)
+        unstarted = ~torch.gather(started, 1, safe_act)  # (B, A)
+        
+        # 2. Project release time check
+        proj_ids = torch.gather(self.activity_project[batch_idxs], 1, safe_act)  # (B, A)
+        release_times = torch.gather(self.project_release_time[batch_idxs], 1, proj_ids)  # (B, A)
+        released = release_times <= current_times  # (B, A)
+        
+        # 3. Team availability check
+        team_avail_times = torch.gather(self.team_available_time[batch_idxs], 1, safe_team)  # (B, A)
+        team_ok = team_avail_times <= current_times  # (B, A)
+        
+        # Basic feasibility
+        basic = valid & unstarted & released & team_ok  # (B, A)
+        
+        # 4. Predecessor check (vectorized with gather)
+        preds = self.activity_predecessors[batch_idxs]  # (B, max_N_A, max_preds)
+        max_preds = preds.shape[2]
+        
+        # Gather predecessors for each action's activity: preds[b, safe_act[b,a], :]
+        act_exp_p = safe_act.unsqueeze(2).expand(-1, -1, max_preds)  # (B, A, max_preds)
+        action_preds = torch.gather(preds, 1, act_exp_p)  # (B, A, max_preds)
+        
+        # Check if all valid predecessors are ended
+        valid_pred_mask = action_preds >= 0  # (B, A, max_preds)
+        safe_preds = action_preds.clamp(min=0)  # (B, A, max_preds)
+        
+        ended = self.activity_ended[batch_idxs]  # (B, max_N_A)
+        pred_ended = torch.gather(
+            ended, 1, safe_preds.reshape(B, -1)
+        ).reshape(B, A, max_preds)  # (B, A, max_preds)
+        
+        # Invalid preds (padding=-1) count as ended
+        pred_ok = (pred_ended | ~valid_pred_mask).all(dim=2)  # (B, A)
+        
+        # 5. Mutex check (vectorized with gather)
+        mutex = self.activity_mutex[batch_idxs]  # (B, max_N_A, max_mutex)
+        max_mutex = mutex.shape[2]
+        
+        act_exp_m = safe_act.unsqueeze(2).expand(-1, -1, max_mutex)  # (B, A, max_mutex)
+        action_mutex = torch.gather(mutex, 1, act_exp_m)  # (B, A, max_mutex)
+        
+        valid_mutex_mask = action_mutex >= 0  # (B, A, max_mutex)
+        safe_mutex = action_mutex.clamp(min=0)  # (B, A, max_mutex)
+        
+        mutex_started = torch.gather(
+            started, 1, safe_mutex.reshape(B, -1)
+        ).reshape(B, A, max_mutex)  # (B, A, max_mutex)
+        mutex_ended = torch.gather(
+            ended, 1, safe_mutex.reshape(B, -1)
+        ).reshape(B, A, max_mutex)  # (B, A, max_mutex)
+        
+        # Running = started AND not ended AND valid mutex entry
+        mutex_running = mutex_started & ~mutex_ended & valid_mutex_mask  # (B, A, max_mutex)
+        mutex_ok = ~mutex_running.any(dim=2)  # (B, A)
+        
+        # Combine all conditions
+        self.available_actions[batch_idxs] = basic & pred_ok & mutex_ok
     
     def step(self, action):
         """
@@ -340,88 +475,52 @@ class SchedulingEnv:
 
     def move_next_state(self, batch_idxs):
         """
-        시뮬레이터 로직에 따라 다음 의사결정 이벤트까지 시간 진행
-        배치별로 처리하며, 의사결정이 필요한 시점에서 멈춤
+        시뮬레이터 로직에 따라 다음 의사결정 이벤트까지 시간 진행 (벡터화)
+        배치 상태 분류를 all/any 배치 연산으로 수행 (for문 0개)
         
         Args:
             batch_idxs: 처리할 배치 인덱스들
             
         Returns:
             bool: all_done - 모든 배치의 activity가 완료되었는지 여부
-        """        
+        """
         max_iterations = 1000  # 무한 루프 방지
         iterations = 0
-
-        # 처리할 배치들 마스킹
-        batch_mask = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
-        batch_mask[batch_idxs] = True
-
+        
         # 루프 시작 전 초기 액션 업데이트
         self._update_available_actions(batch_idxs)
-
+        
         while iterations < max_iterations:
             iterations += 1
             
-            # 각 배치별로 activity 완료 상태 확인
-            batches_started = []  # 모든 activity가 started된 배치들
-            batches_not_started = []  # 모든 activity가 아직 started 안된 배치들
-            batches_ended = []  # 모든 activity가 ended된 배치들
+            # 벡터화된 배치 상태 분류
+            all_ended = self.activity_ended[batch_idxs].all(dim=1)     # (n,)
+            all_started = self.activity_started[batch_idxs].all(dim=1)  # (n,)
+            has_actions = self.available_actions[batch_idxs].any(dim=1)  # (n,)
             
-            for b in batch_idxs:
-                b_item = b.item() if torch.is_tensor(b) else b
-                activity_started = self.activity_started[b_item].all().item()
-                activity_ended = self.activity_ended[b_item].all().item()
-                
-                if activity_ended:
-                    batches_ended.append(b_item)
-                elif activity_started:
-                    batches_started.append(b_item)
-                else:
-                    batches_not_started.append(b_item)
-            
-            all_done = (len(batches_ended) == len(batch_idxs))
-
-            if all_done:
+            # 모든 배치 완료 체크
+            if all_ended.all():
                 break
             
-            # 시간을 진행해야 할 배치들 결정
-            batches_to_advance = []
+            # 시간 진행이 필요한 배치 결정 (벡터 연산)
+            # 1. 모든 activity가 시작됨 & 아직 다 끝나지 않음 -> 시간 진행
+            # 2. 아직 끝나지 않음 & 가능한 액션 없음 -> 시간 진행
+            needs_advance = (all_started & ~all_ended) | (~all_ended & ~has_actions)
             
-            # 1. started된 배치들 (ended될 때 까지 시간 진행)
-            batches_to_advance.extend(batches_started)
-            
-            # 2. started 안된 배치들 중 가능한 액션이 없는 배치들 (다음 의사결정까지 시간 진행)
-            for b_idx in batches_not_started:
-                if not self.available_actions[b_idx].any().item():
-                    batches_to_advance.append(b_idx)
-            
-            if len(batches_to_advance) > 0:
-                batches_to_advance_tensor = torch.tensor(batches_to_advance, dtype=torch.long, device=self.device)
-                self._advance_to_next_decision_event_for_batches(batches_to_advance_tensor)
-                self._update_available_actions(batches_to_advance_tensor)
-            else:
-                # 시간 진행할 배치가 없으면 중단 (모든 배치가 의사결정 가능 상태)
+            if not needs_advance.any():
+                # 모든 활성 배치가 의사결정 가능 상태 -> 중단
                 break
-
-        # 루프 종료 후 정보 출력
+            
+            advance_idxs = batch_idxs[needs_advance]
+            self._advance_to_next_decision_event_for_batches(advance_idxs)
+            self._update_available_actions(advance_idxs)
+        
+        # 최대 반복 도달 시 디버그 출력
         if iterations >= max_iterations:
             print(f"\n❌ [move_next_state] 최대 반복 횟수({max_iterations}) 도달!")
-            for b in batch_idxs:
-                b_item = b.item() if torch.is_tensor(b) else b
-                num_started = self.activity_started[b_item].sum().item()
-                num_completed = self.activity_ended[b_item].sum().item()
-                num_total = self.num_activities[b_item].item()
-                num_available = self.available_actions[b_item].sum().item()
-                print(f"   Batch {b_item}: Started={num_started}/{num_total}, "
-                      f"Completed={num_completed}/{num_total}, "
-                      f"Available Actions={num_available}")
         
-        final_all_done = True
-        for b in batch_idxs:
-            b_item = b.item() if torch.is_tensor(b) else b
-            if not self.activity_ended[b_item].all().item():
-                final_all_done = False
-                break
+        # 최종 완료 체크 (벡터화)
+        final_all_done = self.activity_ended[batch_idxs].all().item()
         
         return final_all_done
 
@@ -590,151 +689,131 @@ class SchedulingEnv:
     
     def _get_state(self):
         """
-        현재 상태를 GNN 입력 형태로 반환
+        현재 상태를 모델 입력 형태로 반환
+        self.state_mode에 따라 PyG 또는 DANIEL 형태로 출력
+        
+        Returns:
+            state: 모델 입력 형태의 상태 (mode에 따라 다름)
+        """
+        if self.state_mode == 'daniel':
+            return self._get_state_daniel()
+        else:
+            return self._get_state_pyg()
+    
+    def _get_state_pyg(self):
+        """
+        현재 상태를 PyG (Graph) 입력 형태로 반환 (GNN 모델용)
+        노드 피처는 텐서 슬라이싱으로 구성 (for문 없음), 엣지는 사전 계산된 static edge 재사용
         
         Returns:
             state: List of PyG Data objects (배치별로 하나씩)
         """
         state_list = []
         
+        # 정규화용 상수 (배치 전체 한번에)
+        max_duration = self.duration_max
+        max_times = torch.clamp(self.sim_time + 1.0, min=1.0)  # (B,)
+        max_release = self.project_release_time.max(dim=1)[0].clamp(min=1.0)  # (B,)
+        max_due = self.project_due_date.max(dim=1)[0].clamp(min=1.0)  # (B,)
+        
         for b in range(self.batch_size):
+            info = self.static_edges[b]
+            num_act = info['num_act']
+            num_nodes = info['num_nodes']
+            edge_index = info['edge_index']
+            edge_type = info['edge_type']
+            
             # ========================================
-            # 노드 피처 구성 (패딩 방식)
+            # 노드 피처 구성 (텐서 슬라이싱 -- for문 없음)
             # ========================================
             # 전체 노드 피처: 8차원
-            # Activity: [0:4] = [duration, started, ended, remaining_time], [4:8] = 0
-            # Team: [0:4] = 0, [4] = available_time, [5:8] = 0
-            # Project: [0:5] = 0, [5:8] = [release_time, due_date, completed]
-            
-            num_act = self.num_activities[b].item()
-            num_nodes = num_act + self.N_T + self.N_P
-            
-            # 노드 피처 초기화 (8차원, 모두 0으로 시작)
+            # Activity [0:4]: duration, started, ended, remaining_time
+            # Team [4]: available_time
+            # Project [5:8]: remaining_release, remaining_due, completed
             node_features = torch.zeros(num_nodes, 8, device=self.device)
             
-            # 정규화를 위한 시간 스케일
-            max_time = max(1.0, self.sim_time[b].item() + 1.0)
-            max_duration = self.duration_max
-            max_release_time = self.project_release_time[b].max().item()  # 배치 내 최대 release time
-            max_due_date = self.project_due_date[b].max().item()  # 배치 내 최대 due date
-            current_time = self.sim_time[b].item()
+            # Activity 노드 [0:num_act]
+            node_features[:num_act, 0] = self.activity_duration[b, :num_act] / max_duration
+            node_features[:num_act, 1] = self.activity_started[b, :num_act].float()
+            node_features[:num_act, 2] = self.activity_ended[b, :num_act].float()
+            node_features[:num_act, 3] = self.activity_remaining_time[b, :num_act] / max_duration
             
-            # Activity 노드 (0 ~ num_act-1)
-            for act_id in range(num_act):
-                idx = act_id
-                # [0:4] 사용
-                node_features[idx, 0] = self.activity_duration[b, act_id] / max_duration  # duration
-                node_features[idx, 1] = float(self.activity_started[b, act_id])  # started
-                node_features[idx, 2] = float(self.activity_ended[b, act_id])  # ended
-                node_features[idx, 3] = self.activity_remaining_time[b, act_id] / max_duration  # remaining_time
-                # [4:8]은 이미 0으로 패딩됨
+            # Team 노드 [num_act:num_act+N_T]
+            node_features[num_act:num_act + self.N_T, 4] = (
+                self.team_available_time[b] / max_times[b]
+            )
             
-            # Team 노드 (num_act ~ num_act+N_T-1)
-            for team_id in range(self.N_T):
-                idx = num_act + team_id
-                # [0:4]는 이미 0으로 패딩됨
-                # [4] 사용
-                node_features[idx, 4] = self.team_available_time[b, team_id] / max_time
-                # [5:8]은 이미 0으로 패딩됨
-            
-            # Project 노드 (num_act+N_T ~ num_act+N_T+N_P-1)
-            for proj_id in range(self.N_P):
-                idx = num_act + self.N_T + proj_id
-                # [0:5]는 이미 0으로 패딩됨
-                # [5:8] 사용
-                # release까지 남은 시간 (음수면 0)
-                remaining_release = max(0.0, self.project_release_time[b, proj_id].item() - current_time)
-                node_features[idx, 5] = remaining_release / max(1.0, max_release_time)
-                
-                # due date까지 남은 시간 (음수면 0)
-                remaining_due = max(0.0, self.project_due_date[b, proj_id].item() - current_time)
-                node_features[idx, 6] = remaining_due / max(1.0, max_due_date)
-                
-                node_features[idx, 7] = float(self.project_completed[b, proj_id])
+            # Project 노드 [num_act+N_T:num_act+N_T+N_P]
+            current_time = self.sim_time[b]
+            proj_start = num_act + self.N_T
+            remaining_release = torch.clamp(self.project_release_time[b] - current_time, min=0.0)
+            remaining_due = torch.clamp(self.project_due_date[b] - current_time, min=0.0)
+            node_features[proj_start:proj_start + self.N_P, 5] = remaining_release / max_release[b]
+            node_features[proj_start:proj_start + self.N_P, 6] = remaining_due / max_due[b]
+            node_features[proj_start:proj_start + self.N_P, 7] = self.project_completed[b].float()
             
             # ========================================
-            # 엣지 구성 (edge_index + edge_attr)
+            # 엣지 속성 (dynamic) 계산 -- static edge 재사용
             # ========================================
-            edge_index_list = []
-            edge_attr_list = []
+            num_edges = edge_index.shape[1]
+            edge_attr = torch.zeros(num_edges, 1, device=self.device)
             
-            # 1. Activity → Activity (Precedence) - 엣지 피처 없음
-            num_precedence = 0
-            for act_id in range(num_act):
-                predecessors = self.activity_predecessors[b, act_id]
-                for pred_id in predecessors:
-                    if pred_id >= 0 and pred_id < num_act:
-                        edge_index_list.append([pred_id, act_id])
-                        edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
-                        num_precedence += 1
+            # Mutex edges: is_ordered (둘 중 하나가 started이면 1)
+            mutex_mask = (edge_type == 1)
+            if mutex_mask.any():
+                ma1 = info['mutex_act1']
+                ma2 = info['mutex_act2']
+                is_ordered = (
+                    self.activity_started[b, ma1] | self.activity_started[b, ma2]
+                ).float()
+                edge_attr[mutex_mask, 0] = is_ordered
             
-            # 2. Activity ↔ Activity (Mutex - 양방향) - 엣지 피처: is_ordered
-            num_mutex_start = len(edge_index_list)
-            for act_id in range(num_act):
-                mutex_activities = self.activity_mutex[b, act_id]
-                for mutex_id in mutex_activities:
-                    if mutex_id >= 0 and mutex_id < num_act and mutex_id > act_id:
-                        # 양방향 엣지 추가
-                        # is_ordered 계산: 둘 중 하나가 시작했으면 1, 아니면 0
-                        is_ordered = float(self.activity_started[b, act_id] or self.activity_started[b, mutex_id])
-                        
-                        edge_index_list.append([act_id, mutex_id])
-                        edge_attr_list.append([is_ordered])
-                        
-                        edge_index_list.append([mutex_id, act_id])
-                        edge_attr_list.append([is_ordered])
-            
-            # 3. Activity ↔ Team (Eligible - 양방향) - 엣지 피처: is_assigned
-            num_eligible_start = len(edge_index_list)
-            for act_id in range(num_act):
-                eligible_teams = self.activity_eligible_teams[b, act_id]
-                for team_id in range(self.N_T):
-                    if eligible_teams[team_id]:
-                        # is_assigned 계산: 이 activity가 이 team에 할당되었으면 1
-                        is_assigned = float(self.activity_assigned_team[b, act_id] == team_id)
-                        
-                        # 양방향 엣지 추가 (둘 다 동일한 is_assigned 값)
-                        edge_index_list.append([act_id, num_act + team_id])
-                        edge_attr_list.append([is_assigned])
-                        
-                        edge_index_list.append([num_act + team_id, act_id])
-                        edge_attr_list.append([is_assigned])
-            
-            # 4. Activity ↔ Project (Belongs-to - 양방향) - 엣지 피처 없음
-            num_belongs_start = len(edge_index_list)
-            for act_id in range(num_act):
-                proj_id = self.activity_project[b, act_id].item()
-                # 양방향 엣지 추가
-                edge_index_list.append([act_id, num_act + self.N_T + proj_id])
-                edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
-                
-                edge_index_list.append([num_act + self.N_T + proj_id, act_id])
-                edge_attr_list.append([0.0])  # 구조 정보만, 더미 피처
-            
-            if edge_index_list:
-                edge_index = torch.tensor(edge_index_list, dtype=torch.long, device=self.device).t().contiguous()
-                edge_attr = torch.tensor(edge_attr_list, dtype=torch.float, device=self.device)
-            else:
-                edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
-                edge_attr = torch.empty((0, 1), dtype=torch.float, device=self.device)
+            # Eligible edges: is_assigned (activity가 해당 team에 할당되었으면 1)
+            elig_mask = (edge_type == 2)
+            if elig_mask.any():
+                ea = info['eligible_act']
+                et = info['eligible_team']
+                is_assigned = (self.activity_assigned_team[b, ea] == et).float()
+                edge_attr[elig_mask, 0] = is_assigned
             
             # ========================================
-            # Action 마스크 (가능한 action만 True)
-            # ========================================
-            # Eligible 기반 action space 사용 (이미 1D)
-            action_mask = self.available_actions[b]  # (max_action_space,)
-            
             # PyG Data 객체 생성
+            # ========================================
             data = Data(
                 x=node_features,
                 edge_index=edge_index,
-                edge_attr=edge_attr,  # 엣지 피처 추가
-                mask=action_mask,  # Action 마스크
+                edge_attr=edge_attr,
+                mask=self.available_actions[b],
                 batch_idx=b,
                 num_activities=num_act,
                 sim_time=self.sim_time[b].item()
             )
-            
             state_list.append(data)
         
         return state_list
+    
+    def _get_state_daniel(self):
+        """
+        현재 상태를 DANIEL 모델 입력 형태로 반환
+        
+        DANIEL이 기대하는 출력:
+            fea_act: (B, N, 10) - activity feature vectors
+            act_mask: (B, N, 3) - predecessor/successor mask
+            fea_team: (B, T, 8) - team feature vectors
+            team_mask: (B, T, T) - team attention mask
+            comp_idx: (B, T, T, P) - competition index
+            dynamic_pair_mask: (B, P, T) - incompatible pair mask
+            candidate: (B, P) - candidate activity indices
+            fea_pairs: (B, P, T, 8) - pair features
+        
+        Note: RCMPSP는 FJSP와 문제 구조가 다르므로 (DAG 선행관계, mutex 제약 등)
+              피처 설계가 별도로 필요합니다.
+        
+        Returns:
+            EnvState 객체
+        """
+        raise NotImplementedError(
+            "DANIEL 모델용 상태 출력은 아직 구현되지 않았습니다. "
+            "RCMPSP에 맞는 피처 설계(fea_act, comp_idx 등)가 필요합니다. "
+            "fjsp_env_same_op_nums.py의 construct_*_features()를 참고하여 구현하세요."
+        )

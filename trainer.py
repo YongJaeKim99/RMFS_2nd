@@ -805,7 +805,7 @@ class Scheduling_Trainer:
         print(f"{'='*60}")
         
         try:
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
             
             # 모델 가중치 로드
             self.model.load_state_dict(checkpoint['model_state_dict'])

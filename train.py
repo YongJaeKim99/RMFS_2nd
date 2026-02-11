@@ -23,8 +23,8 @@ if __name__ == "__main__":
             
     # 기본 학습 파라미터
     EPOCHS = 200
-    BATCH_SIZE = 16
-    POMO_SIZE = 8  # -1 또는 1로 설정하면 POMO 미사용
+    BATCH_SIZE = 3
+    POMO_SIZE = 2  # -1 또는 1로 설정하면 POMO 미사용
 
     # Wandb 옵션
     USE_WANDB = True
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     DEBUG_MODEL = False
     
     # 로깅 상세도 옵션
-    VERBOSE_LOGGING = False  # True: 각 batch/POMO별 목적함수와 started/ended 출력
+    VERBOSE_LOGGING = True  # True: 각 batch/POMO별 목적함수와 started/ended 출력
                               # False: accumulation마다 평균값만, epoch 끝날 때만 출력
     
     # =================================================================
