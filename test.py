@@ -36,11 +36,12 @@ if __name__ == "__main__":
     # -----------------------------
     # 체크포인트 폴더 이름 (checkpoints/ 아래의 폴더명)
     # 예: "20260210_130751_tardiness_REINFORCE"
-    CHECKPOINT_FOLDER = "20260210_175204_tardiness_REINFORCE"
+    #CHECKPOINT_FOLDER = "20260210_175204_tardiness_REINFORCE"
+    CHECKPOINT_FOLDER = "best"
     
     # 특정 체크포인트 파일 이름 (None이면 자동 선택)
     # 예: "scheduling_epoch100.pt" 또는 None
-    CHECKPOINT_FILE = "epoch0.pt"
+    CHECKPOINT_FILE = "best_model.pt"
     
     # 모든 체크포인트에 대해 실험할지 여부
     # True: 폴더 내 모든 체크포인트 테스트
@@ -52,7 +53,7 @@ if __name__ == "__main__":
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["RL","GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["GA", "RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -64,8 +65,8 @@ if __name__ == "__main__":
     # -----------------------------
     #SAVE_GANTT_CHART = False  # True: 간트차트 생성, False: 생성 안 함
     #SHOW_GANTT_CHART = False  # True: 브라우저에서 표시, False: 저장만
-    SAVE_GANTT_CHART = True
-    SHOW_GANTT_CHART = True
+    SAVE_GANTT_CHART = False
+    SHOW_GANTT_CHART = False
     
     # =================================================================
     # 🎯 목적함수 선택
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     # - 'test' 모드: TEST_FILE_START.pickle ~ TEST_FILE_END.pickle
     # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
     TEST_FILE_START = 0
-    TEST_FILE_END = 0
+    TEST_FILE_END = 49
     
     # -----------------------------
     # 3) 기타 설정

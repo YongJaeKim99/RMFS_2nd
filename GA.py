@@ -277,7 +277,7 @@ class GeneticAlgorithm:
                 
                 # 선행 작업 완료 체크
                 all_predecessors_done = True
-                earliest_start = project.release_time
+                earliest_start = 0
                 
                 for pred_id in activity.predecessors:
                     if pred_id not in scheduled_activities:
@@ -293,7 +293,14 @@ class GeneticAlgorithm:
                 if not all_predecessors_done:
                     continue
                 
-                # 동시 수행 불가 제약 확인 (mutually exclusive)
+                # 팀의 현재 가용 시간 확인
+                team_ready_time = team_available_time[team_id]
+                
+                # Release time 체크: 팀이 가용한 시점에 아직 release time이 안되었으면 skip
+                if team_ready_time < project.release_time:
+                    continue
+                
+                # 동시 수행 불가 제약 확인 (mutually exclusive) - 기다림
                 for mutex_id in activity.mutually_exclusive:
                     if mutex_id in scheduled_activities:
                         # 동시 수행 불가인 activity가 이미 스케줄되어 있으면
@@ -301,8 +308,8 @@ class GeneticAlgorithm:
                         mutex_end_time = schedule[mutex_id][1]
                         earliest_start = max(earliest_start, mutex_end_time)
                 
-                # 팀의 가용 시간 확인
-                earliest_start = max(earliest_start, team_available_time[team_id])
+                # 실제 시작 시간 계산 (선행 작업, 팀 가용 시간, release time 고려)
+                earliest_start = max(earliest_start, team_ready_time, project.release_time)
                 
                 # 스케줄에 추가
                 start_time = earliest_start
@@ -327,9 +334,9 @@ class GeneticAlgorithm:
         """
         목적함수 계산: 프로젝트별 tardiness(지연 시간) 합 최소화
         Tardiness = max(0, 완료시간 - 납기)
-        스케줄되지 않은 activity가 있으면 큰 penalty
+        스케줄되지 않은 activity가 있으면 None 반환 (infeasible)
         
-        Returns: objective value (작을수록 좋음)
+        Returns: objective value (작을수록 좋음) or None (infeasible)
         """
         schedule = self.decode_and_schedule(solution)
         solution.schedule = schedule
@@ -340,53 +347,67 @@ class GeneticAlgorithm:
         unscheduled_activities = all_activities - scheduled_activities
         
         if len(unscheduled_activities) > 0:
-            # 스케줄이 불완전하면 큰 penalty
-            objective = len(unscheduled_activities) * 100000
-        else:
-            # 모든 activity가 스케줄된 경우
-            # 각 프로젝트의 완료 시간 계산
-            project_completion = {}
-            for act_id, (start, end, team_id) in schedule.items():
-                proj_id = self.activity_to_project[act_id]
-                if proj_id not in project_completion:
-                    project_completion[proj_id] = end
-                else:
-                    project_completion[proj_id] = max(project_completion[proj_id], end)
-            
-            # 각 프로젝트의 tardiness 계산 및 합산
-            total_tardiness = 0
-            for proj_id, completion_time in project_completion.items():
-                project = self.project_dict[proj_id]
-                tardiness = max(0, completion_time - project.due_date)
-                total_tardiness += tardiness
-            
-            # 목적함수: 모든 프로젝트의 tardiness 합 (작을수록 좋음)
-            objective = total_tardiness
+            # 스케줄이 불완전하면 infeasible
+            return None
+        
+        # 모든 activity가 스케줄된 경우
+        # 각 프로젝트의 완료 시간 계산
+        project_completion = {}
+        for act_id, (start, end, team_id) in schedule.items():
+            proj_id = self.activity_to_project[act_id]
+            if proj_id not in project_completion:
+                project_completion[proj_id] = end
+            else:
+                project_completion[proj_id] = max(project_completion[proj_id], end)
+        
+        # 각 프로젝트의 tardiness 계산 및 합산
+        total_tardiness = 0
+        for proj_id, completion_time in project_completion.items():
+            project = self.project_dict[proj_id]
+            tardiness = max(0, completion_time - project.due_date)
+            total_tardiness += tardiness
+        
+        # 목적함수: 모든 프로젝트의 tardiness 합 (작을수록 좋음)
+        objective = total_tardiness
         
         return objective
     
-    def evaluate_population(self, population: List[Solution]):
+    def evaluate_population(self, population: List[Solution]) -> List[Solution]:
         """
         Population의 모든 solution에 대해 objective와 fitness 계산
+        Infeasible solution은 제거
         
-        Objective: 작을수록 좋은 값 (팀별 makespan 합)
+        Objective: 작을수록 좋은 값 (프로젝트별 tardiness 합)
         Fitness: 클수록 좋은 값 (룰렛 휠 선택용)
                 fitness = max_obj - obj + epsilon
+        
+        Returns: feasible solutions만 포함된 리스트
         """
-        # 1단계: 모든 solution의 objective 계산
+        # 1단계: 모든 solution의 objective 계산 및 feasible한 것만 필터링
+        feasible_population = []
         objectives = []
+        
         for solution in population:
             obj = self.calculate_objective(solution)
-            solution.objective = obj  # objective 저장
-            objectives.append(obj)
+            if obj is not None:  # feasible한 경우만
+                solution.objective = obj
+                feasible_population.append(solution)
+                objectives.append(obj)
+        
+        # Feasible solution이 없는 경우 경고
+        if len(feasible_population) == 0:
+            print("  ⚠️ 경고: Feasible solution이 하나도 없습니다!")
+            return []
         
         # 2단계: Fitness 변환 (큰 값이 좋도록)
         max_obj = max(objectives)
         epsilon = 1.0  # 작은 값 추가 (모든 fitness가 양수가 되도록)
         
-        for solution in population:
+        for solution in feasible_population:
             # fitness = max_obj - obj + epsilon (클수록 좋음)
             solution.fitness = max_obj - solution.objective + epsilon
+        
+        return feasible_population
     
     def roulette_wheel_selection(self, population: List[Solution]) -> Solution:
         """
@@ -456,15 +477,31 @@ class GeneticAlgorithm:
             print("  - Immediate: activity 스케줄 시 즉시 처음부터 재시작")
         print("-" * 60)
         
-        # 초기 population 생성
-        population = self.initialize_population()
-        self.evaluate_population(population)
+        # 초기 population 생성 (feasible solution이 나올 때까지 반복)
+        max_init_attempts = 10
+        init_attempt = 0
+        population = []
+        
+        while len(population) == 0 and init_attempt < max_init_attempts:
+            init_attempt += 1
+            print(f"초기 population 생성 시도 {init_attempt}/{max_init_attempts}...")
+            
+            initial_pop = self.initialize_population()
+            population = self.evaluate_population(initial_pop)
+            
+            if len(population) == 0:
+                print(f"  ⚠️ Feasible solution이 없습니다. 다시 시도...")
+        
+        if len(population) == 0:
+            raise ValueError(f"{max_init_attempts}번 시도 후에도 초기 population에서 feasible solution을 찾을 수 없습니다!")
         
         # 최적 solution 초기화 (objective가 작을수록 좋음)
         self.best_solution = min(population, key=lambda x: x.objective).copy()
         self.best_fitness_history.append(self.best_solution.objective)
         
-        print(f"세대 0: Best Objective = {self.best_solution.objective:.2f}")
+        print(f"✅ 초기 population 생성 완료 (시도 {init_attempt}회)")
+        print(f"세대 0: Best Objective = {self.best_solution.objective:.2f}, "
+              f"Feasible: {len(population)}/{self.population_size}")
         
         # 진화 루프
         for generation in range(1, self.generations + 1):
@@ -495,10 +532,23 @@ class GeneticAlgorithm:
                 new_population.extend([child1, child2])
             
             # Population 크기 조정
-            population = new_population[:self.population_size]
+            new_population = new_population[:self.population_size]
             
-            # 평가
-            self.evaluate_population(population)
+            # 평가 (infeasible solution 제거)
+            population = self.evaluate_population(new_population)
+            
+            # Population이 너무 작아지면 새로운 랜덤 solution 추가
+            while len(population) < self.population_size // 2:
+                random_sol = Solution(self.pairs)
+                obj = self.calculate_objective(random_sol)
+                if obj is not None:
+                    random_sol.objective = obj
+                    population.append(random_sol)
+            
+            # Population이 여전히 비어있으면 경고
+            if len(population) == 0:
+                print(f"  ⚠️ 세대 {generation}: Feasible solution이 없습니다!")
+                continue
             
             # 최적 solution 업데이트 (objective가 작을수록 좋음)
             current_best = min(population, key=lambda x: x.objective)
@@ -509,9 +559,9 @@ class GeneticAlgorithm:
             
             # 진행상황 출력
             if generation % 50 == 0 or generation == self.generations:
-                avg_obj = sum(s.objective for s in population) / len(population)
+                avg_obj = sum(s.objective for s in population) / len(population) if len(population) > 0 else float('inf')
                 print(f"세대 {generation}: Best Obj = {self.best_solution.objective:.2f}, "
-                      f"Avg Obj = {avg_obj:.2f}")
+                      f"Avg Obj = {avg_obj:.2f}, Feasible: {len(population)}/{self.population_size}")
         
         print("-" * 60)
         print(f"최적화 완료! 최종 Objective = {self.best_solution.objective:.2f}")

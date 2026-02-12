@@ -21,6 +21,9 @@ from data_generator import generate_scheduling_data_batch
 # GNN 모델 import
 from gnn_model import SchedulingModel
 
+# DANIEL 모델 import
+from model.main_model import DANIEL
+
 import logging
 import warnings
 import wandb
@@ -70,7 +73,8 @@ class Scheduling_Trainer:
         if mode == 'train':
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             objective = env_params.get('objective', 'tardiness')
-            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_REINFORCE"
+            model_type = trainer_params.get('model_type', 'gat').upper()
+            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{model_type}_REINFORCE"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
             print(f"✅ 체크포인트 저장 폴더 생성: {self.checkpoint_dir}")
         else:
@@ -99,17 +103,33 @@ class Scheduling_Trainer:
             print(f"Device: {self.device}")
         print(f"Debug ENV: {self.debug_env}, Debug Model: {self.debug_model}")
         
+        # 모델 타입 설정
+        self.model_type = trainer_params.get('model_type', 'gat')
+        
         # 모델 초기화
-        # model_params에 환경 파라미터 추가 (HeteroConv에서 필요)
-        model_params_with_env = copy.deepcopy(self.model_params)
-        model_params_with_env['N_T'] = env_params['N_T']
-        model_params_with_env['N_P'] = env_params['N_P']
-        
-        self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.device)
-        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
-        
-        print("✅ GNN 모델 초기화 완료")
-        print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
+        if self.model_type == 'daniel':
+            # DANIEL 모델: argparse Namespace처럼 attribute 접근 가능한 config 생성
+            from types import SimpleNamespace
+            daniel_config = SimpleNamespace(
+                device=str(self.device),
+                **self.model_params,
+            )
+            self.model = DANIEL(daniel_config).to(self.device)
+            self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
+            
+            print("✅ DANIEL 모델 초기화 완료")
+            print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
+        else:
+            # GNN (GAT) 모델
+            model_params_with_env = copy.deepcopy(self.model_params)
+            model_params_with_env['N_T'] = env_params['N_T']
+            model_params_with_env['N_P'] = env_params['N_P']
+            
+            self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.device)
+            self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
+            
+            print("✅ GNN 모델 초기화 완료")
+            print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
 
         self.result_train_loss_log = []
         
@@ -160,6 +180,7 @@ class Scheduling_Trainer:
             config = {
                 "objective": objective,
                 "algorithm": "REINFORCE",
+                "model_type": self.model_type,
                 "N_P": self.env_params.get('N_P'),
                 "N_A_min": self.env_params.get('N_A_min'),
                 "N_A_max": self.env_params.get('N_A_max'),
@@ -170,10 +191,20 @@ class Scheduling_Trainer:
                 "learning_rate": learning_rate,
                 "normalize_advantage": normalize_advantage,
                 "entropy_coef": self.trainer_params.get('entropy_coef', 0.0),
-                "embedding_dim": self.model_params.get('embedding_dim'),
-                "num_head": self.model_params.get('num_head'),
-                "num_encoder_layer": self.model_params.get('num_encoder_layer'),
             }
+            # 모델별 파라미터 추가
+            if self.model_type == 'daniel':
+                config.update({
+                    "fea_act_input_dim": self.model_params.get('fea_act_input_dim'),
+                    "fea_team_input_dim": self.model_params.get('fea_team_input_dim'),
+                    "layer_fea_output_dim": self.model_params.get('layer_fea_output_dim'),
+                })
+            else:
+                config.update({
+                    "embedding_dim": self.model_params.get('embedding_dim'),
+                    "num_head": self.model_params.get('num_head'),
+                    "num_encoder_layer": self.model_params.get('num_encoder_layer'),
+                })
             
             # Wandb init 파라미터 구성
             wandb_init_kwargs = {
@@ -447,52 +478,90 @@ class Scheduling_Trainer:
         problem = generate_scheduling_data_batch(self.env_params)
         env._reset(problem)
         
-        # 모델에 action space 정보 전달 (초기화 시 한 번만)
-        action_to_pair, max_action_space = env.action_to_pair, env.max_action_space
-        self.model.set_action_space(action_to_pair, max_action_space)
+        batch_total = self.env_params['batch_size'] * self.env_params['pomo_size']
+        
+        # GAT 모드: action_to_pair 전달
+        if self.model_type == 'gat':
+            action_to_pair, max_action_space = env.action_to_pair, env.max_action_space
+            self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
         
         done = False
         s = env._get_state()
-        log_prob_tmp = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.device)
+        log_prob_tmp = torch.zeros(batch_total).to(self.device)
         
-        # action_type을 모두 0으로 초기화 (Action Type 0: Item-Order->CP)
-        #batch_size = self.env_params['batch_size'] * self.env_params['pomo_size']
-        #_, action_type, action_mask = env.move_next_state(torch.arange(batch_size, dtype=torch.long))
-        
-        # 환경에서 받은 텐서들을 GPU로 이동
-        '''
-        if action_type is not None:
-            action_type = action_type.to(self.device)
-        if action_mask is not None:
-            action_mask = action_mask.to(self.device)
-        '''
- 
         step_count = 0
-        MAX_STEPS = 1000  # 타임아웃: 1000 steps 이상 소요 시 조기 종료
+        MAX_STEPS = 1000
         
         # Entropy regularization 계수 확인
         entropy_coef = self.trainer_params.get('entropy_coef', 0.0)
         use_entropy = entropy_coef > 0
         
         # Shaped reward 및 entropy 누적용
-        cumulative_reward = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size'])
+        cumulative_reward = torch.zeros(batch_total)
         if use_entropy:
-            cumulative_entropy = torch.zeros(self.env_params['batch_size'] * self.env_params['pomo_size']).to(self.device)
+            cumulative_entropy = torch.zeros(batch_total).to(self.device)
 
         while not done:
             step_count += 1
-            action, log_prob, entropy = self.model.get_action(s)
-            log_prob_tmp += log_prob
-            if use_entropy:
-                cumulative_entropy += entropy  # Entropy 누적
             
-            # device_mode에 따라 action을 환경 device로 이동
-            if self.device_mode == 'gpu':
-                # GPU 모드: action을 GPU에 유지
-                s, obj_value, done = env.step(action)
+            if self.model_type == 'daniel':
+                # ============================================
+                # DANIEL 모델 경로
+                # ============================================
+                # EnvState의 텐서들을 모델 device로 이동
+                fea_act = s.fea_act_tensor.to(self.device)
+                act_mask = s.act_mask_tensor.to(self.device)
+                candidate = s.candidate_tensor.to(self.device)
+                fea_team = s.fea_team_tensor.to(self.device)
+                team_mask = s.team_mask_tensor.to(self.device)
+                comp_idx = s.comp_idx_tensor.to(self.device)
+                dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
+                fea_pairs = s.fea_pairs_tensor.to(self.device)
+                
+                # DANIEL forward: (pi, v)
+                pi, v = self.model(
+                    fea_act, act_mask, candidate, fea_team,
+                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                )
+                
+                # Action 샘플링
+                dist = Categorical(pi)
+                action_flat = dist.sample()  # (B,) — index in [0, P*T)
+                log_prob = dist.log_prob(action_flat)
+                entropy = dist.entropy()
+                
+                log_prob_tmp += log_prob
+                if use_entropy:
+                    cumulative_entropy += entropy
+                
+                # Action 변환: flat index → (project, team) → (activity, team)
+                N_T = env.N_T
+                proj_idx = action_flat // N_T  # (B,)
+                team_idx = action_flat % N_T   # (B,)
+                
+                # candidate에서 activity 가져오기 (환경 device에서)
+                cand = env.daniel_candidate  # (B, P) — 환경 device에 있음
+                activity_idx = cand[torch.arange(batch_total, device=env.device), proj_idx.to(env.device)]
+                
+                # 환경 step (activity, team 쌍으로 직접)
+                s, obj_value, done = env.step_pair(
+                    activity_idx,
+                    team_idx.to(env.device)
+                )
             else:
-                # Hybrid/CPU 모드: action을 CPU로 이동
-                s, obj_value, done = env.step(action.to('cpu'))
+                # ============================================
+                # GAT (GNN) 모델 경로 (기존 코드)
+                # ============================================
+                action, log_prob, entropy = self.model.get_action(s)
+                log_prob_tmp += log_prob
+                if use_entropy:
+                    cumulative_entropy += entropy
+                
+                # device_mode에 따라 action을 환경 device로 이동
+                if self.device_mode == 'gpu':
+                    s, obj_value, done = env.step(action)
+                else:
+                    s, obj_value, done = env.step(action.to('cpu'))
 
         # 목적함수값을 reward로 변환 (음수로)
         reward = -obj_value  # reward = -목적함수 (최소화 문제를 최대화 문제로)
@@ -965,23 +1034,54 @@ class Scheduling_Trainer:
             val_env = SchedulingEnv(val_env_params, debug_env=False, device=val_env_device)
             val_env._reset(problem)
             
-            # 모델에 action space 정보 전달
-            action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
-            self.model.set_action_space(action_to_pair, max_action_space)
+            if self.model_type == 'gat':
+                # GAT 모드: action_to_pair 전달
+                action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
+                self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
             
             done = False
             s = val_env._get_state()
             
             with torch.no_grad():
                 while not done:
-                    # Greedy action 선택
-                    action = self.model.get_max_action(s)
-                    
-                    # device_mode에 따라 action을 환경 device로 이동
-                    if self.device_mode == 'gpu':
-                        s, obj_value, done = val_env.step(action)
+                    if self.model_type == 'daniel':
+                        # DANIEL Greedy: argmax on pi
+                        fea_act = s.fea_act_tensor.to(self.device)
+                        act_mask = s.act_mask_tensor.to(self.device)
+                        candidate = s.candidate_tensor.to(self.device)
+                        fea_team = s.fea_team_tensor.to(self.device)
+                        team_mask = s.team_mask_tensor.to(self.device)
+                        comp_idx = s.comp_idx_tensor.to(self.device)
+                        dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
+                        fea_pairs = s.fea_pairs_tensor.to(self.device)
+                        
+                        pi, v = self.model(
+                            fea_act, act_mask, candidate, fea_team,
+                            team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                        )
+                        
+                        # Greedy: argmax
+                        action_flat = torch.argmax(pi, dim=1)
+                        
+                        N_T = val_env.N_T
+                        proj_idx = action_flat // N_T
+                        team_idx = action_flat % N_T
+                        
+                        cand = val_env.daniel_candidate
+                        activity_idx = cand[torch.arange(1, device=val_env.device), proj_idx.to(val_env.device)]
+                        
+                        s, obj_value, done = val_env.step_pair(
+                            activity_idx,
+                            team_idx.to(val_env.device)
+                        )
                     else:
-                        s, obj_value, done = val_env.step(action.to('cpu'))
+                        # GAT Greedy action 선택
+                        action = self.model.get_max_action(s)
+                        
+                        if self.device_mode == 'gpu':
+                            s, obj_value, done = val_env.step(action)
+                        else:
+                            s, obj_value, done = val_env.step(action.to('cpu'))
             
             # 목적함수값 계산
             obj_value = val_env._get_obj()

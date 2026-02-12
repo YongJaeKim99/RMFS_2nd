@@ -17,14 +17,17 @@ if __name__ == "__main__":
     RESUME_FROM_CHECKPOINT = None  # None: 처음부터 학습, "path/to/checkpoint.pt": 체크포인트에서 이어서 학습
     RESUME_TRAINING = False  # True: epoch 번호도 이어받기, False: epoch는 0부터 시작 (가중치만 로드)
     
+    # 모델 선택 옵션
+    MODEL_TYPE = 'gat'  # 'gat': 기존 GNN(GAT) 모델, 'daniel': DANIEL 모델
+    
     # Device 옵션
     DEVICE_MODE = 'hybrid'  # 'cpu', 'hybrid', 'gpu'
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
             
     # 기본 학습 파라미터
     EPOCHS = 200
-    BATCH_SIZE = 3
-    POMO_SIZE = 2  # -1 또는 1로 설정하면 POMO 미사용
+    BATCH_SIZE = 16
+    POMO_SIZE = 8  # -1 또는 1로 설정하면 POMO 미사용
 
     # Wandb 옵션
     USE_WANDB = True
@@ -120,6 +123,7 @@ if __name__ == "__main__":
          'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
          'objective': OBJECTIVE,
          'debug_env': DEBUG_ENV,
+         'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
     }
     '''
     # 큰 사이즈
@@ -141,17 +145,35 @@ if __name__ == "__main__":
     }
     '''
     # 모델 파라미터 설정
-    model_params = {
-        'embedding_dim': 128,
-        'num_head': 8,
-        'num_encoder_layer': 3,
-        'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
-    }
+    if MODEL_TYPE == 'gat':
+        model_params = {
+            'embedding_dim': 128,
+            'num_head': 8,
+            'num_encoder_layer': 3,
+            'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
+        }
+    elif MODEL_TYPE == 'daniel':
+        model_params = {
+            # DAN (Dual Attention Network) 파라미터
+            'fea_act_input_dim': 10,    # Activity 피처 차원
+            'fea_team_input_dim': 8,    # Team 피처 차원
+            'num_heads_AAB': [4, 4],    # Activity Attention Block 헤드 수
+            'num_heads_TAB': [4, 4],    # Team Attention Block 헤드 수
+            'layer_fea_output_dim': [32, 8],  # DAN 레이어 출력 차원
+            'dropout_prob': 0.0,
+            # Actor-Critic MLP 파라미터
+            'num_mlp_layers_actor': 3,
+            'hidden_dim_actor': 64,
+            'num_mlp_layers_critic': 3,
+            'hidden_dim_critic': 64,
+        }
+    else:
+        raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Use 'gat' or 'daniel'.")
     
     # 트레이너 파라미터 설정
     trainer_params = {
         'epochs': EPOCHS,
-        'accumulation_steps': 4,
+        'accumulation_steps': 1,
         'grad_clip_norm': 1.0,
         'entropy_coef': ENTROPY_COEF if USE_ENTROPY_REG else 0.0,
         'baseline_type': BASELINE_TYPE,
@@ -176,6 +198,7 @@ if __name__ == "__main__":
         'validation_pomo_size': VALIDATION_POMO_SIZE,
         'resume_from_checkpoint': RESUME_FROM_CHECKPOINT,
         'resume_training': RESUME_TRAINING,
+        'model_type': MODEL_TYPE,
     }
     
     # 트레이너 생성
@@ -188,7 +211,11 @@ if __name__ == "__main__":
         print(f"📂 체크포인트 재개: {RESUME_FROM_CHECKPOINT}")
         print(f"   └─ Epoch 이어받기: {'ON' if RESUME_TRAINING else 'OFF'}")
     
-    print(f"Algorithm: REINFORCE")
+    print(f"Model: {MODEL_TYPE.upper()}")
+    if MODEL_TYPE == 'daniel':
+        print(f"  └─ Algorithm: REINFORCE + Value Baseline")
+    else:
+        print(f"  └─ Algorithm: REINFORCE")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")

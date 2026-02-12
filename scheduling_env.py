@@ -10,8 +10,22 @@ from torch_geometric.data import Data, Batch
 import numpy as np
 import copy
 from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
 
 from data_generator import generate_scheduling_data_batch
+
+
+@dataclass
+class EnvState:
+    """DANIEL 모델용 상태 정의 (RCMPSP 환경)"""
+    fea_act_tensor: torch.Tensor = None       # (B, N, 10) activity features
+    act_mask_tensor: torch.Tensor = None       # (B, N, 3)  attention mask
+    fea_team_tensor: torch.Tensor = None       # (B, T, 8)  team features
+    team_mask_tensor: torch.Tensor = None      # (B, T, T)  team attention mask
+    dynamic_pair_mask_tensor: torch.Tensor = None  # (B, P, T)  incompatible pair mask
+    comp_idx_tensor: torch.Tensor = None       # (B, T, T, P) competition index
+    candidate_tensor: torch.Tensor = None      # (B, P) candidate activity per project
+    fea_pairs_tensor: torch.Tensor = None      # (B, P, T, 8) pair features
 
 
 class SchedulingEnv:
@@ -439,6 +453,31 @@ class SchedulingEnv:
             self.state = self._get_state()
             return self.state, None, False
     
+    def step_pair(self, activity_ids, team_ids):
+        """
+        DANIEL 모델용 step: (activity_id, team_id) 쌍을 직접 받아 처리
+        action_to_pair 매핑을 거치지 않음
+        
+        Args:
+            activity_ids: (batch_size,) - 각 배치의 activity ID
+            team_ids: (batch_size,) - 각 배치의 team ID
+        
+        Returns:
+            state, obj_value, done (step과 동일)
+        """
+        active_batch_idxs = torch.arange(self.batch_size, device=self.device)[~self.done]
+        if len(active_batch_idxs) > 0:
+            self._schedule_activity(active_batch_idxs, activity_ids, team_ids)
+        
+        all_done = self.move_next_state(self.BATCH_IDX)
+        
+        if all_done:
+            obj_value = self._get_obj()
+            return None, obj_value, True
+        else:
+            self.state = self._get_state()
+            return self.state, None, False
+    
     def _schedule_activity(self, batch_idxs, activity_ids, team_ids):
         """
         Activity를 팀에 할당하고 시작
@@ -794,26 +833,263 @@ class SchedulingEnv:
     
     def _get_state_daniel(self):
         """
-        현재 상태를 DANIEL 모델 입력 형태로 반환
+        현재 상태를 DANIEL 모델 입력 형태로 반환 (완전 벡터화)
         
-        DANIEL이 기대하는 출력:
+        RCMPSP에 맞게 적응된 피처:
             fea_act: (B, N, 10) - activity feature vectors
-            act_mask: (B, N, 3) - predecessor/successor mask
+            act_mask: (B, N, 3) - predecessor/successor attention mask
             fea_team: (B, T, 8) - team feature vectors
             team_mask: (B, T, T) - team attention mask
             comp_idx: (B, T, T, P) - competition index
             dynamic_pair_mask: (B, P, T) - incompatible pair mask
-            candidate: (B, P) - candidate activity indices
+            candidate: (B, P) - candidate activity per project
             fea_pairs: (B, P, T, 8) - pair features
-        
-        Note: RCMPSP는 FJSP와 문제 구조가 다르므로 (DAG 선행관계, mutex 제약 등)
-              피처 설계가 별도로 필요합니다.
         
         Returns:
             EnvState 객체
         """
-        raise NotImplementedError(
-            "DANIEL 모델용 상태 출력은 아직 구현되지 않았습니다. "
-            "RCMPSP에 맞는 피처 설계(fea_act, comp_idx 등)가 필요합니다. "
-            "fjsp_env_same_op_nums.py의 construct_*_features()를 참고하여 구현하세요."
+        B = self.batch_size
+        N = self.max_N_A
+        P = self.N_P
+        T = self.N_T
+        device = self.device
+        
+        # ========================================
+        # 공통 마스크 및 상수
+        # ========================================
+        act_indices = torch.arange(N, device=device).unsqueeze(0)  # (1, N)
+        valid_act = act_indices < self.num_activities.unsqueeze(1)  # (B, N)
+        current_time = self.sim_time  # (B,)
+        max_dur = float(self.duration_max)
+        max_time_val = max(1.0, current_time.max().item() + 1.0)
+        
+        # ========================================
+        # 1. Ready mask & Candidate 계산
+        # ========================================
+        # Ready = not started AND all predecessors ended AND valid
+        preds = self.activity_predecessors  # (B, N, max_preds)
+        valid_pred_mask = preds >= 0
+        safe_preds = preds.clamp(min=0)
+        pred_ended = torch.gather(
+            self.activity_ended, 1, safe_preds.reshape(B, -1)
+        ).reshape(B, N, preds.shape[2])
+        all_preds_done = (pred_ended | ~valid_pred_mask).all(dim=2)  # (B, N)
+        ready = ~self.activity_started & all_preds_done & valid_act  # (B, N)
+        
+        # 프로젝트 소속 마스크: (B, P, N)
+        proj_range = torch.arange(P, device=device).view(1, -1, 1)
+        proj_membership = (self.activity_project.unsqueeze(1) == proj_range)  # (B, P, N)
+        
+        # Candidate: 프로젝트별 첫 번째 ready activity
+        proj_ready = ready.unsqueeze(1) & proj_membership  # (B, P, N)
+        act_idx_exp = act_indices.unsqueeze(1).expand(-1, P, -1)  # (1, P, N)
+        masked_idx = torch.where(proj_ready, act_idx_exp.expand(B, -1, -1), N)
+        candidate = masked_idx.min(dim=2)[0].clamp(max=N - 1)  # (B, P)
+        self.daniel_candidate = candidate  # trainer에서 사용
+        
+        # ========================================
+        # 2. 프로젝트 통계 (피처 구성에 사용)
+        # ========================================
+        proj_valid = proj_membership & valid_act.unsqueeze(1)  # (B, P, N)
+        proj_not_started = (~self.activity_started).unsqueeze(1) & proj_valid  # (B, P, N)
+        proj_rem_count = proj_not_started.sum(dim=2).float()  # (B, P)
+        proj_tot_count = proj_valid.sum(dim=2).float().clamp(min=1)  # (B, P)
+        proj_rem_work = (self.activity_duration.unsqueeze(1) * proj_not_started.float()).sum(dim=2)  # (B, P)
+        proj_tot_work = (self.activity_duration.unsqueeze(1) * proj_valid.float()).sum(dim=2).clamp(min=1)  # (B, P)
+        
+        # ========================================
+        # 3. fea_act (B, N, 10)
+        # ========================================
+        act_proj_safe = self.activity_project.clamp(min=0)  # (B, N)
+        
+        f0 = self.activity_started.float()
+        f1 = self.activity_ended.float()
+        f2 = self.activity_duration / max_dur
+        f3 = self.activity_remaining_time / max_dur
+        
+        # Predecessor completion ratio
+        pred_done_cnt = (pred_ended & valid_pred_mask).sum(dim=2).float()
+        total_pred_cnt = valid_pred_mask.sum(dim=2).float().clamp(min=1)
+        f4 = pred_done_cnt / total_pred_cnt
+        
+        f5 = ready.float()  # currently ready (simplified waiting indicator)
+        f6 = torch.where(
+            self.activity_started,
+            self.activity_start_time / max_time_val,
+            torch.zeros_like(self.activity_start_time)
         )
+        
+        # Project remaining act/work ratios (mapped per activity)
+        f7 = torch.gather(proj_rem_count, 1, act_proj_safe) / torch.gather(proj_tot_count, 1, act_proj_safe)
+        f8 = torch.gather(proj_rem_work, 1, act_proj_safe) / torch.gather(proj_tot_work, 1, act_proj_safe)
+        f9 = self.activity_eligible_teams.sum(dim=2).float() / T
+        
+        fea_act = torch.stack([f0, f1, f2, f3, f4, f5, f6, f7, f8, f9], dim=2)
+        fea_act[~valid_act] = 0
+        
+        # Normalization (FJSP 방식: activity 축 기준 mean/std)
+        valid_count = valid_act.sum(dim=1, keepdim=True).float().clamp(min=1)
+        fea_sum = (fea_act * valid_act.unsqueeze(2).float()).sum(dim=1, keepdim=True)
+        mean_fea = fea_sum / valid_count.unsqueeze(2)
+        temp = torch.where(valid_act.unsqueeze(2), fea_act, mean_fea)
+        var_fea = ((temp - mean_fea) ** 2).sum(dim=1, keepdim=True) / valid_count.unsqueeze(2)
+        std_fea = torch.sqrt(var_fea + 1e-8)
+        fea_act = (temp - mean_fea) / std_fea
+        fea_act[~valid_act] = 0
+        
+        # ========================================
+        # 4. act_mask (B, N, 3) — attention neighbor mask
+        # ========================================
+        # 0=predecessor, 1=self, 2=successor in linear order
+        # mask=1 means DON'T attend (FJSP convention)
+        act_mask = torch.zeros(B, N, 3, device=device)
+        
+        # 프로젝트별 first/last activity
+        proj_first = torch.where(proj_valid, act_idx_exp.expand(B, -1, -1), N).min(dim=2)[0]  # (B, P)
+        proj_last = torch.where(proj_valid, act_idx_exp.expand(B, -1, -1), -1).max(dim=2)[0]  # (B, P)
+        
+        b_idx_flat = torch.arange(B, device=device).unsqueeze(1).expand(-1, P).reshape(-1)
+        
+        vf = (proj_first < N).reshape(-1)
+        act_mask[b_idx_flat[vf], proj_first.reshape(-1)[vf].clamp(max=N - 1), 0] = 1.0
+        
+        vl = (proj_last >= 0).reshape(-1)
+        act_mask[b_idx_flat[vl], proj_last.reshape(-1)[vl].clamp(min=0), 2] = 1.0
+        
+        act_mask[~valid_act] = 1.0  # 패딩 activity는 전부 mask
+        
+        # ========================================
+        # 5. Candidate 기반 pair 정보
+        # ========================================
+        cand_safe = candidate.clamp(max=N - 1)  # (B, P)
+        
+        # candidate별 eligible teams: (B, P, T)
+        cand_exp_t = cand_safe.unsqueeze(2).expand(-1, -1, T)  # (B, P, T)
+        elig_for_cand = torch.gather(self.activity_eligible_teams, 1, cand_exp_t)  # (B, P, T)
+        
+        # candidate started / project done
+        cand_started = torch.gather(self.activity_started, 1, cand_safe)  # (B, P)
+        proj_done = proj_rem_count <= 0  # (B, P)
+        
+        # team available at current time
+        team_avail_now = self.team_available_time <= current_time.unsqueeze(1)  # (B, T)
+        
+        # project released
+        cand_proj_id = torch.gather(self.activity_project, 1, cand_safe)  # (B, P)
+        proj_release = torch.gather(self.project_release_time, 1, cand_proj_id)  # (B, P)
+        proj_released = proj_release <= current_time.unsqueeze(1)  # (B, P)
+        
+        # ========================================
+        # 6. dynamic_pair_mask (B, P, T) — True=masked
+        # ========================================
+        dynamic_pair_mask = (
+            ~elig_for_cand
+            | cand_started.unsqueeze(2)
+            | proj_done.unsqueeze(2)
+            | ~team_avail_now.unsqueeze(1)
+            | ~proj_released.unsqueeze(2)
+        )
+        
+        # available pairs (inverse of mask)
+        avail_pair = ~dynamic_pair_mask  # (B, P, T)
+        
+        # ========================================
+        # 7. comp_idx (B, T, T, P) — competition index
+        # ========================================
+        avail_t = avail_pair.permute(0, 2, 1).float()  # (B, T, P)
+        comp_idx = (avail_t.unsqueeze(2) * avail_t.unsqueeze(1))  # (B, T, T, P)
+        
+        # ========================================
+        # 8. team_mask (B, T, T) — team attention mask
+        # ========================================
+        team_mask = (comp_idx.sum(dim=3) > 0).float()  # (B, T, T)
+        diag = torch.arange(T, device=device)
+        team_mask[:, diag, diag] = 1.0
+        
+        # ========================================
+        # 9. fea_team (B, T, 8)
+        # ========================================
+        t0 = avail_pair.sum(dim=1).float() / max(1, P)  # available candidate count
+        
+        unstarted_elig = self.activity_eligible_teams & (~self.activity_started & valid_act).unsqueeze(2)
+        t1 = unstarted_elig.sum(dim=1).float() / max(1, N)  # compatible unstarted count
+        
+        dur_exp = self.activity_duration.unsqueeze(2).expand(-1, -1, T)
+        dur_masked = torch.where(unstarted_elig, dur_exp, torch.full_like(dur_exp, float('inf')))
+        t2_raw = dur_masked.min(dim=1)[0]
+        t2 = torch.where(t2_raw.isinf(), torch.zeros_like(t2_raw), t2_raw / max_dur)
+        
+        dur_sum = (dur_exp * unstarted_elig.float()).sum(dim=1)
+        dur_cnt = unstarted_elig.sum(dim=1).float().clamp(min=1)
+        t3 = (dur_sum / dur_cnt) / max_dur
+        
+        t4 = torch.clamp(current_time.unsqueeze(1) - self.team_available_time, min=0) / max_time_val
+        t5 = torch.clamp(self.team_available_time - current_time.unsqueeze(1), min=0) / max_dur
+        t6 = self.team_available_time / max_time_val
+        t7 = (self.team_available_time > current_time.unsqueeze(1)).float()
+        
+        fea_team = torch.stack([t0, t1, t2, t3, t4, t5, t6, t7], dim=2)
+        
+        # Team feature normalization
+        mean_team = fea_team.mean(dim=1, keepdim=True)
+        std_team = fea_team.std(dim=1, keepdim=True).clamp(min=1e-8)
+        fea_team = (fea_team - mean_team) / std_team
+        
+        # ========================================
+        # 10. fea_pairs (B, P, T, 8) — pair features
+        # ========================================
+        cand_dur = torch.gather(self.activity_duration, 1, cand_safe)  # (B, P)
+        cand_pt = cand_dur.unsqueeze(2) * elig_for_cand.float()  # (B, P, T)
+        
+        max_cand_pt = cand_pt.max(dim=2, keepdim=True)[0].clamp(min=1e-8)
+        team_max_pt = cand_pt.max(dim=1, keepdim=True)[0].clamp(min=1e-8)
+        global_max_pt = cand_pt.max().clamp(min=1e-8)
+        
+        p0 = cand_pt / max_dur
+        p1 = cand_pt / max_cand_pt
+        p2 = cand_pt / team_max_pt
+        p3 = cand_pt / global_max_pt
+        
+        # team remaining work ratio
+        team_rem = torch.clamp(self.team_available_time - current_time.unsqueeze(1), min=0)  # (B, T)
+        p4 = cand_pt / (team_rem.unsqueeze(1) + cand_pt + 1e-8)
+        
+        # estimated completion time ratio
+        est_start = torch.max(
+            current_time.unsqueeze(1).unsqueeze(2).expand(-1, P, T),
+            self.team_available_time.unsqueeze(1).expand(-1, P, -1)
+        )
+        est_comp = est_start + cand_pt
+        proj_due = torch.gather(self.project_due_date, 1, cand_proj_id)  # (B, P)
+        p5 = (proj_due.unsqueeze(2) - est_comp) / max(1.0, max_time_val)  # slack
+        
+        # project remaining work ratio
+        proj_rem_exp = proj_rem_work.unsqueeze(2).expand(-1, -1, T).clamp(min=1e-8)
+        p6 = cand_pt / proj_rem_exp
+        
+        # pair wait time
+        team_wait = torch.clamp(
+            self.team_available_time.unsqueeze(1) - current_time.unsqueeze(1).unsqueeze(2), min=0
+        )
+        release_wait = torch.clamp(
+            proj_release.unsqueeze(2) - current_time.unsqueeze(1).unsqueeze(2), min=0
+        )
+        p7 = (team_wait + release_wait) / max(1.0, max_time_val)
+        
+        fea_pairs = torch.stack([p0, p1, p2, p3, p4, p5, p6, p7], dim=3)
+        fea_pairs[dynamic_pair_mask] = 0
+        
+        # ========================================
+        # EnvState 생성
+        # ========================================
+        state = EnvState(
+            fea_act_tensor=fea_act,
+            act_mask_tensor=act_mask.float(),
+            fea_team_tensor=fea_team,
+            team_mask_tensor=team_mask,
+            dynamic_pair_mask_tensor=dynamic_pair_mask,
+            comp_idx_tensor=comp_idx,
+            candidate_tensor=candidate,
+            fea_pairs_tensor=fea_pairs,
+        )
+        return state
