@@ -49,16 +49,31 @@ if __name__ == "__main__":
     TEST_ALL_CHECKPOINTS = False
     
     # -----------------------------
-    # 2) 테스트할 알고리즘 설정
+    # 2) 모델 타입 설정
+    # -----------------------------
+    MODEL_TYPE = 'gat'  # 'gat': GNN(GAT) 모델, 'daniel': DANIEL 모델
+
+    # -----------------------------
+    # 2-1) 학습 알고리즘 설정 (체크포인트와 일치해야 함)
+    # -----------------------------
+    ALGORITHM_TYPE = 'reinforce'  # 'reinforce' or 'ppo'
+    # ※ 학습 시 사용한 ALGORITHM_TYPE과 동일하게 설정하세요.
+    #   추론(inference) 자체는 두 알고리즘 모두 동일하게 동작합니다.
+
+    # -----------------------------
+    # 3) 테스트할 알고리즘 설정
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["GA", "RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
     GA_POPULATION_SIZE = 50
-    GA_GENERATIONS = 300
+    GA_GENERATIONS = 1000
     GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
+    GA_CROSSOVER_RATE = 0.8  # Uniform Crossover 적용 확률
+    GA_MUTATION_RATE = 0.2   # Mutation 적용 확률 (페어의 10%에 새 random key 할당)
+    GA_VERBOSE = False  # True: 세대별 진행상황 출력, False: 최종 결과만
     
     # -----------------------------
     # 간트차트 생성 설정
@@ -145,15 +160,32 @@ if __name__ == "__main__":
         'due_date_tightness': 1.3,
         'objective': OBJECTIVE,
         'debug_env': DEBUG_ENV,
+        'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
     }
 
-    # 모델 파라미터 설정
-    model_params = {
-        'embedding_dim': 128, 
-        'num_head': 8,
-        'num_encoder_layer': 3,
-        'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
-    }
+    # 모델 파라미터 설정 (MODEL_TYPE에 따라 분기)
+    if MODEL_TYPE == 'gat':
+        model_params = {
+            'embedding_dim': 128,
+            'num_head': 8,
+            'num_encoder_layer': 3,
+            'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
+        }
+    elif MODEL_TYPE == 'daniel':
+        model_params = {
+            'fea_act_input_dim': 10,
+            'fea_team_input_dim': 8,
+            'num_heads_AAB': [4, 4],
+            'num_heads_TAB': [4, 4],
+            'layer_fea_output_dim': [32, 8],
+            'dropout_prob': 0.0,
+            'num_mlp_layers_actor': 3,
+            'hidden_dim_actor': 64,
+            'num_mlp_layers_critic': 3,
+            'hidden_dim_critic': 64,
+        }
+    else:
+        raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Use 'gat' or 'daniel'.")
     
     # 옵티마이저 파라미터 설정
     optimizer_params = {
@@ -176,6 +208,8 @@ if __name__ == "__main__":
         'device_mode': 'cpu',
         'model_device': 'cpu',
         'env_device': 'cpu',
+        'model_type': MODEL_TYPE,
+        'algorithm_type': ALGORITHM_TYPE,
     }
     
     # 체크포인트 폴더 생성
@@ -272,21 +306,38 @@ if __name__ == "__main__":
     # -----------------------------
     if TEST_DATA_TYPE == 'val':
         data_base_dir = project_root / "data" / "val"
+        val_batch_path = data_base_dir / "val_batch.pickle"
     else:
         data_base_dir = project_root / "data" / "test"
-    
+        val_batch_path = None
+
     print(f"📂 데이터 경로: {data_base_dir}")
-    
-    # 데이터 폴더가 없으면 경고
-    if not data_base_dir.exists():
-        print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
-        print(f"   {TEST_DATA_TYPE} 데이터를 먼저 생성해주세요.")
-        if TEST_DATA_TYPE == 'val':
+
+    # 데이터 폴더/파일 존재 확인
+    if TEST_DATA_TYPE == 'val':
+        if not val_batch_path.exists():
+            print(f"⚠️  경고: Validation 배치 파일이 존재하지 않습니다: {val_batch_path}")
             print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
-        exit(1)
-    
-    # 데이터 파일 확인 (test와 val 모두 동일한 형식: 0.pickle, 1.pickle, ...)
-    print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
+            exit(1)
+        # 배치 파일 로드
+        with open(val_batch_path, 'rb') as f:
+            val_batch_problem = pickle.load(f)
+        # pickle에 저장된 env_params로 덮어쓰기 (N_P, N_T 등 일치 보장)
+        saved_env = val_batch_problem['env_params']
+        env_params['N_P'] = saved_env['N_P']
+        env_params['N_T'] = saved_env['N_T']
+        env_params['batch_size'] = 1  # 테스트 시 단일 인스턴스
+        env_params['pomo_size'] = 1
+        print(f"📄 Validation 배치 파일 로드 완료: {val_batch_path}")
+        print(f"   pickle env_params 적용: N_P={env_params['N_P']}, N_T={env_params['N_T']}")
+        print(f"   인스턴스 범위: {TEST_FILE_START}~{TEST_FILE_END}")
+    else:
+        val_batch_problem = None
+        if not data_base_dir.exists():
+            print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
+            print(f"   {TEST_DATA_TYPE} 데이터를 먼저 생성해주세요.")
+            exit(1)
+        print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     
     # -----------------------------
     # 7) 체크포인트 로드 (RL 테스트가 있을 때만)
@@ -347,29 +398,30 @@ if __name__ == "__main__":
         print(f"{'='*60}")
         
         ga_results = []
-        
-        # Test와 Validation 모두 동일한 형식: 개별 파일 (0.pickle, 1.pickle, ...)
+
+        from data_generator import convert_problem_to_ga_format
+
         for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-                data_path = data_base_dir / f"{i}.pickle"
-                if not data_path.exists():
-                    print(f"⚠️  Warning: Data file not found: {data_path}")
-                    continue
-                
-                print(f"\n📋 테스트 파일 {i}.pickle")
-                
-                start_time = time.time()
-                
-                try:
-                    # 테스트 데이터 로드
+                # 데이터 로드: val이면 배치에서 추출, test이면 개별 파일
+                if val_batch_problem is not None:
+                    problem = val_batch_problem
+                    batch_idx = i
+                    print(f"\n📋 Validation 인스턴스 {i} (배치에서 추출)")
+                else:
+                    data_path = data_base_dir / f"{i}.pickle"
+                    if not data_path.exists():
+                        print(f"⚠️  Warning: Data file not found: {data_path}")
+                        continue
+                    print(f"\n📋 테스트 파일 {i}.pickle")
                     with open(data_path, 'rb') as fr:
                         problem = pickle.load(fr)
-                    
-                    print(f"   ✅ 테스트 데이터 로드: {data_path}")
-                    
+                    batch_idx = 0
+
+                start_time = time.time()
+
+                try:
                     # pickle 데이터를 GA 형식으로 변환
-                    from data_generator import convert_problem_to_ga_format
-                    
-                    projects = convert_problem_to_ga_format(problem, 0, env_params['N_T'])
+                    projects = convert_problem_to_ga_format(problem, batch_idx, env_params['N_T'])
                     
                     # GA 실행
                     ga = GeneticAlgorithm(
@@ -377,7 +429,10 @@ if __name__ == "__main__":
                         num_teams=env_params['N_T'],
                         population_size=GA_POPULATION_SIZE,
                         generations=GA_GENERATIONS,
-                        decode_mode=GA_DECODE_MODE
+                        crossover_rate=GA_CROSSOVER_RATE,
+                        mutation_rate=GA_MUTATION_RATE,
+                        decode_mode=GA_DECODE_MODE,
+                        verbose=GA_VERBOSE
                     )
                     best_solution = ga.evolve()
                     objective_value = best_solution.objective
@@ -468,6 +523,10 @@ if __name__ == "__main__":
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 trainer.model.load_state_dict(checkpoint['model_state_dict'])
                 print(f"✅ RL 모델 로드 완료: {checkpoint_name}")
+                # 학습 알고리즘 정보 표시
+                saved_alg = checkpoint.get('algorithm_type',
+                            checkpoint.get('trainer_params', {}).get('algorithm_type', 'reinforce'))
+                print(f"   └─ Saved algorithm: {str(saved_alg).upper()}")
             else:
                 trainer.model.load_state_dict(checkpoint)
                 print(f"✅ RL 모델 로드 완료 (이전 형식): {checkpoint_name}")
@@ -482,40 +541,84 @@ if __name__ == "__main__":
             continue
         
         rl_results = []
-        
-        # Test와 Validation 모두 동일한 형식: 개별 파일 (0.pickle, 1.pickle, ...)
+
         for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-                data_path = data_base_dir / f"{i}.pickle"
-                if not data_path.exists():
-                    print(f"⚠️  Warning: Data file not found: {data_path}")
-                    continue
-                
-                print(f"\n📋 테스트 파일 {i}.pickle")
-                
+                # 데이터 로드: val이면 배치에서 단일 인스턴스 추출, test이면 개별 파일
+                if val_batch_problem is not None:
+                    # 배치에서 i번째 인스턴스를 단일 problem으로 추출
+                    problem = {}
+                    for key, value in val_batch_problem.items():
+                        if isinstance(value, torch.Tensor):
+                            problem[key] = value[i:i+1]  # (1, ...) 형태로 슬라이싱
+                        elif key == 'batch_projects':
+                            problem[key] = [value[i]]
+                        elif key == 'batch_activities':
+                            problem[key] = [value[i]]
+                        elif key == 'env_params':
+                            problem[key] = {**value, 'batch_size': 1, 'pomo_size': 1}
+                        else:
+                            problem[key] = value
+                    print(f"\n📋 Validation 인스턴스 {i} (배치에서 추출)")
+                else:
+                    data_path = data_base_dir / f"{i}.pickle"
+                    if not data_path.exists():
+                        print(f"⚠️  Warning: Data file not found: {data_path}")
+                        continue
+                    print(f"\n📋 테스트 파일 {i}.pickle")
+                    with open(data_path, 'rb') as fr:
+                        problem = pickle.load(fr)
+
                 start_time = time.time()
-                
+
                 try:
                     with torch.no_grad():
-                        # 테스트 데이터 로드
-                        with open(data_path, 'rb') as fr:
-                            problem = pickle.load(fr)
-                        
-                        print(f"   ✅ 테스트 데이터 로드: {data_path}")
                         
                         # 환경 초기화 - Test 모드는 무조건 CPU
                         test_env = SchedulingEnv(env_params, debug_env=False, device='cpu')
                         test_env._reset(problem)
-                        
-                        # 모델에 action space 정보 전달
-                        action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
-                        trainer.model.set_action_space(action_to_pair, max_action_space)
-                        
+
                         done = False
                         s = test_env._get_state()
-                        
-                        while not done:
-                            action = trainer.model.get_max_action(s)
-                            s, obj_value, done = test_env.step(action.to('cpu'))
+
+                        if MODEL_TYPE == 'daniel':
+                            # DANIEL 모델: EnvState 텐서를 직접 모델에 전달
+                            while not done:
+                                fea_act = s.fea_act_tensor.to(device)
+                                act_mask = s.act_mask_tensor.to(device)
+                                candidate = s.candidate_tensor.to(device)
+                                fea_team = s.fea_team_tensor.to(device)
+                                team_mask = s.team_mask_tensor.to(device)
+                                comp_idx = s.comp_idx_tensor.to(device)
+                                dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
+                                fea_pairs = s.fea_pairs_tensor.to(device)
+
+                                pi, v = trainer.model(
+                                    fea_act, act_mask, candidate, fea_team,
+                                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                                )
+                                # Greedy: argmax
+                                action_flat = torch.argmax(pi, dim=1)
+                                N_T = test_env.N_T
+                                proj_idx = action_flat // N_T
+                                team_idx = action_flat % N_T
+
+                                cand = test_env.daniel_candidate
+                                activity_idx = cand[
+                                    torch.arange(1, device=test_env.device),
+                                    proj_idx.to(test_env.device)
+                                ]
+                                s, obj_value, done = test_env.step_pair(
+                                    activity_idx,
+                                    team_idx.to(test_env.device)
+                                )
+                        else:
+                            # GAT 모델: action space 전달 후 get_max_action 사용
+                            action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
+                            trainer.model.set_action_space(action_to_pair, max_action_space)
+
+                            while not done:
+                                action = trainer.model.get_max_action(s)
+                                s, obj_value, done = test_env.step(action.to('cpu'))
                         
                         test_score = test_env._get_obj()
                         if isinstance(test_score, torch.Tensor):

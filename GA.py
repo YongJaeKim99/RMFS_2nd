@@ -92,7 +92,8 @@ class GeneticAlgorithm:
         crossover_rate: float = 0.8,
         mutation_rate: float = 0.2,
         tournament_size: int = 5,
-        decode_mode: str = "batch"  # "batch" 또는 "immediate"
+        decode_mode: str = "batch",  # "batch" 또는 "immediate"
+        verbose: bool = True  # 세대별 진행상황 출력 여부
     ):
         self.projects = projects
         self.num_teams = num_teams
@@ -102,6 +103,7 @@ class GeneticAlgorithm:
         self.mutation_rate = mutation_rate
         self.tournament_size = tournament_size
         self.decode_mode = decode_mode  # "batch" 또는 "immediate"
+        self.verbose = verbose
         
         # 모든 activities를 수집
         self.activities: List[Activity] = []
@@ -127,7 +129,8 @@ class GeneticAlgorithm:
                 for team_id in range(num_teams):
                     self.pairs.append(Pair(activity.id, team_id))
         
-        print(f"총 {len(self.pairs)}개의 (Activity, Team) 페어 생성됨")
+        if self.verbose:
+            print(f"총 {len(self.pairs)}개의 (Activity, Team) 페어 생성됨")
         
         # 최적 solution 추적
         self.best_solution: Solution = None
@@ -465,78 +468,81 @@ class GeneticAlgorithm:
     
     def evolve(self) -> Solution:
         """메인 진화 루프"""
-        print("유전 알고리즘 시작...")
-        print(f"Population size: {self.population_size}, Generations: {self.generations}")
-        print(f"Activities: {len(self.activities)}, Teams: {self.num_teams}")
-        print(f"목적함수: 프로젝트별 지연(tardiness) 시간 합 최소화")
-        print(f"선택 방법: Roulette Wheel Selection")
-        print(f"디코딩 모드: {self.decode_mode}")
-        if self.decode_mode == "batch":
-            print("  - Batch: 모든 페어를 순회한 후 다시 처음부터")
-        elif self.decode_mode == "immediate":
-            print("  - Immediate: activity 스케줄 시 즉시 처음부터 재시작")
-        print("-" * 60)
-        
+        if self.verbose:
+            print("유전 알고리즘 시작...")
+            print(f"Population size: {self.population_size}, Generations: {self.generations}")
+            print(f"Activities: {len(self.activities)}, Teams: {self.num_teams}")
+            print(f"목적함수: 프로젝트별 지연(tardiness) 시간 합 최소화")
+            print(f"선택 방법: Roulette Wheel Selection")
+            print(f"디코딩 모드: {self.decode_mode}")
+            if self.decode_mode == "batch":
+                print("  - Batch: 모든 페어를 순회한 후 다시 처음부터")
+            elif self.decode_mode == "immediate":
+                print("  - Immediate: activity 스케줄 시 즉시 처음부터 재시작")
+            print("-" * 60)
+
         # 초기 population 생성 (feasible solution이 나올 때까지 반복)
         max_init_attempts = 10
         init_attempt = 0
         population = []
-        
+
         while len(population) == 0 and init_attempt < max_init_attempts:
             init_attempt += 1
-            print(f"초기 population 생성 시도 {init_attempt}/{max_init_attempts}...")
-            
+            if self.verbose:
+                print(f"초기 population 생성 시도 {init_attempt}/{max_init_attempts}...")
+
             initial_pop = self.initialize_population()
             population = self.evaluate_population(initial_pop)
-            
-            if len(population) == 0:
+
+            if len(population) == 0 and self.verbose:
                 print(f"  ⚠️ Feasible solution이 없습니다. 다시 시도...")
-        
+
         if len(population) == 0:
             raise ValueError(f"{max_init_attempts}번 시도 후에도 초기 population에서 feasible solution을 찾을 수 없습니다!")
-        
+
         # 최적 solution 초기화 (objective가 작을수록 좋음)
         self.best_solution = min(population, key=lambda x: x.objective).copy()
         self.best_fitness_history.append(self.best_solution.objective)
-        
-        print(f"✅ 초기 population 생성 완료 (시도 {init_attempt}회)")
-        print(f"세대 0: Best Objective = {self.best_solution.objective:.2f}, "
-              f"Feasible: {len(population)}/{self.population_size}")
-        
+
+        if self.verbose:
+            print(f"✅ 초기 population 생성 완료 (시도 {init_attempt}회)")
+            print(f"세대 0: Best Objective = {self.best_solution.objective:.2f}, "
+                  f"Feasible: {len(population)}/{self.population_size}")
+
         # 진화 루프
         for generation in range(1, self.generations + 1):
             new_population = []
-            
+
             # Elitism: 최고의 solution 보존 (objective가 가장 작은 것)
             elite = min(population, key=lambda x: x.objective).copy()
             new_population.append(elite)
-            
+
             # 새로운 population 생성
             while len(new_population) < self.population_size:
                 # 선택 (룰렛 휠)
                 parent1 = self.roulette_wheel_selection(population)
                 parent2 = self.roulette_wheel_selection(population)
-                
+
                 # 교차
                 if random.random() < self.crossover_rate:
                     child1, child2 = self.crossover(parent1, parent2)
                 else:
                     child1, child2 = parent1.copy(), parent2.copy()
-                
+
                 # 변이
                 if random.random() < self.mutation_rate:
                     self.mutate(child1)
                 if random.random() < self.mutation_rate:
                     self.mutate(child2)
-                
+
                 new_population.extend([child1, child2])
-            
+
             # Population 크기 조정
             new_population = new_population[:self.population_size]
-            
+
             # 평가 (infeasible solution 제거)
             population = self.evaluate_population(new_population)
-            
+
             # Population이 너무 작아지면 새로운 랜덤 solution 추가
             while len(population) < self.population_size // 2:
                 random_sol = Solution(self.pairs)
@@ -544,28 +550,30 @@ class GeneticAlgorithm:
                 if obj is not None:
                     random_sol.objective = obj
                     population.append(random_sol)
-            
+
             # Population이 여전히 비어있으면 경고
             if len(population) == 0:
-                print(f"  ⚠️ 세대 {generation}: Feasible solution이 없습니다!")
+                if self.verbose:
+                    print(f"  ⚠️ 세대 {generation}: Feasible solution이 없습니다!")
                 continue
-            
+
             # 최적 solution 업데이트 (objective가 작을수록 좋음)
             current_best = min(population, key=lambda x: x.objective)
             if current_best.objective < self.best_solution.objective:
                 self.best_solution = current_best.copy()
-            
+
             self.best_fitness_history.append(self.best_solution.objective)
-            
+
             # 진행상황 출력
-            if generation % 50 == 0 or generation == self.generations:
+            if self.verbose and (generation % 50 == 0 or generation == self.generations):
                 avg_obj = sum(s.objective for s in population) / len(population) if len(population) > 0 else float('inf')
                 print(f"세대 {generation}: Best Obj = {self.best_solution.objective:.2f}, "
                       f"Avg Obj = {avg_obj:.2f}, Feasible: {len(population)}/{self.population_size}")
-        
-        print("-" * 60)
-        print(f"최적화 완료! 최종 Objective = {self.best_solution.objective:.2f}")
-        
+
+        if self.verbose:
+            print("-" * 60)
+            print(f"최적화 완료! 최종 Objective = {self.best_solution.objective:.2f}")
+
         return self.best_solution
     
     def print_solution(self, solution: Solution):

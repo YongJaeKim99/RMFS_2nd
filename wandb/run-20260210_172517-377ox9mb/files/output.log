@@ -1,0 +1,41 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 72.9800, time: 6.28s
+  💾 체크포인트 저장: ./checkpoints/20260210_172517_tardiness_REINFORCE\epoch0.pt
+epoch: 1
+epoch: 1, loss: -1.9959, reward: 75.6250, tardiness: -75.6250, time: 81.34s
+epoch: 2
+Traceback (most recent call last):
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\train.py", line 245, in <module>
+    trainer.run()
+    ~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 269, in run
+    train_loss_avg, train_reward_avg = self._train_one_batch()
+                                       ~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 383, in _train_one_batch
+    loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 484, in train_one_minibatch
+    action, log_prob, entropy = self.model.get_action(s)
+                                ~~~~~~~~~~~~~~~~~~~~~^^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\gnn_model.py", line 113, in get_action
+    action_logits = self.forward(s)
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\gnn_model.py", line 63, in forward
+    action_logits = self.gnn_model(state.x, state.edge_index, state)
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\torch\nn\modules\module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\torch\nn\modules\module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\gnn_model.py", line 372, in forward
+    action_emb = torch.cat([act_emb, team_emb], dim=0)  # (2*D,)
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\torch\fx\traceback.py", line 189, in format_stack
+    return traceback.format_list(traceback.extract_stack()[:-1])
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\traceback.py", line 45, in format_list
+    return StackSummary.from_list(extracted_list).format()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\traceback.py", line 776, in format
+    result.append(formatted_frame)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

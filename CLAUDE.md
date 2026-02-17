@@ -1,0 +1,139 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Commands
+
+**Python 인터프리터**: 반드시 conda 환경을 사용해야 합니다.
+```bash
+# 올바른 Python 경로
+/c/ProgramData/anaconda3/envs/RSS_1st/python.exe
+
+# 학습 실행
+/c/ProgramData/anaconda3/envs/RSS_1st/python.exe train.py
+
+# 테스트 실행
+/c/ProgramData/anaconda3/envs/RSS_1st/python.exe test.py
+
+# 빠른 임포트 확인
+cd "C:/Users/yongjae/Desktop/Independent_research/RCMPSP/RCMPSP_1st" && \
+  /c/ProgramData/anaconda3/envs/RSS_1st/python.exe -c "from scheduling_env import SchedulingEnv; print('OK')"
+```
+
+> 주의: `python` 또는 `python.exe` 단독 명령은 Windows Store 더미 Python을 가리켜 exit code 49로 실패합니다.
+
+**주요 패키지**: torch 2.5.1, torch-geometric 2.6.1, wandb, openpyxl, numpy, pandas
+
+---
+
+## 프로젝트 개요
+
+**RCMPSP (Resource-Constrained Multi-Project Scheduling Problem)**을 RL로 푸는 연구 코드입니다.
+여러 프로젝트의 Activity를 제한된 Team(리소스)에 할당하여 Tardiness 또는 Makespan을 최소화합니다.
+
+핵심 제약:
+- **Precedence**: Activity 간 선행 관계
+- **Mutex**: 동시에 실행 불가한 Activity 쌍
+- **Eligible**: Activity마다 수행 가능한 Team 목록
+- **Release time / Due date**: 프로젝트별 시작 가능 시간과 납기
+
+---
+
+## 코드 아키텍처
+
+### 실행 진입점
+
+- **`train.py`**: 학습 파라미터 설정 후 `Scheduling_Trainer.run()` 호출. 모든 하이퍼파라미터는 이 파일 상단의 변수로 제어합니다.
+- **`test.py`**: 저장된 체크포인트로 RL(greedy) 및 GA 성능 비교. 결과를 `results/` 폴더에 Excel로 저장합니다.
+
+### 모델 선택 (train.py, test.py 공통)
+
+```python
+MODEL_TYPE = 'gat'     # GNN(GAT) 기반 모델 → gnn_model.py
+MODEL_TYPE = 'daniel'  # Dual Attention Network → model/main_model.py
+```
+
+모델 타입에 따라 `env_params['state_mode']`(`'pyg'` 또는 `'daniel'`),
+`model_params` 구조, 환경 step 방식이 모두 자동 분기됩니다.
+
+### 핵심 파일 역할
+
+| 파일 | 역할 |
+|------|------|
+| `scheduling_env.py` | RCMPSP 환경 (DES 기반). `_reset()`, `step()`, `step_pair()`, `_get_state()` |
+| `gnn_model.py` | GAT 정책 네트워크. PyG 그래프 입력 → (activity, team) 행동 확률 출력 |
+| `model/main_model.py` | DANIEL 정책+가치 네트워크. 텐서 묶음 입력 → π, v 출력 |
+| `trainer.py` | REINFORCE 학습 루프, validation, 체크포인트 저장/로드, WandB 로깅 |
+| `data_generator.py` | 문제 인스턴스 배치 생성 (`generate_scheduling_data_batch`) |
+| `GA.py` | 비교용 유전 알고리즘 (Random Key 방식) |
+| `gantt_chart.py` | 결과 시각화 |
+
+### 환경-모델 데이터 흐름
+
+```
+train.py (파라미터 설정)
+    └─ Scheduling_Trainer.__init__()
+         ├─ SchedulingEnv(env_params)          # 환경 생성
+         ├─ DANIEL(config) 또는               # 모델 생성
+         │   SchedulingModel(model_params)
+         └─ run()
+              └─ train_one_minibatch()
+                   ├─ env._reset(problem)      # 새 문제 로드
+                   ├─ env._get_state()         # 상태 추출
+                   │    ├─ pyg 모드: PyG Data 리스트
+                   │    └─ daniel 모드: EnvState 데이터클래스
+                   ├─ model.forward(state)     # 행동 확률 계산
+                   ├─ Categorical(π).sample()  # 행동 샘플링
+                   ├─ env.step(action)         # GAT: action index
+                   │   env.step_pair(a, t)     # DANIEL: (activity, team) 직접
+                   └─ REINFORCE loss 계산 및 역전파
+```
+
+### 상태 표현의 두 가지 모드
+
+**PyG 모드 (`state_mode='pyg'`, GAT 전용)**
+- 이종 그래프: Activity / Team / Project 노드 (모두 8차원 패딩 방식)
+- 엣지: Precedence, Mutex(is_ordered), Eligible(is_assigned), Belongs-to
+- `gnn_model.SchedulingModel.set_action_space()` 호출 필요
+
+**DANIEL 모드 (`state_mode='daniel'`)**
+- `EnvState` 데이터클래스: 8개 텐서 (`fea_act [B,N,10]`, `fea_team [B,T,8]`, `candidate [B,P]`, `comp_idx [B,T,T,P]`, `dynamic_pair_mask [B,P,T]`, `fea_pairs [B,P,T,8]`, ...)
+- Action space: `P × T` 고정 (프로젝트별 후보 activity 1개 × 팀)
+- `env.daniel_candidate`로 flat action → activity 역변환
+
+### 체크포인트 구조
+
+학습 시 `checkpoints/{timestamp}_{objective}_{MODEL}_REINFORCE/` 폴더 자동 생성.
+- `epoch{N}.pt`: 5 epoch마다 저장
+- `best_model.pt`: validation 기준 최적 모델
+- `epoch0.pt`: 학습 전 초기 상태
+
+체크포인트 dict: `model_state_dict`, `optimizer_state_dict`, `env_params`, `model_params`, `trainer_params`, `epoch`, `train_score`, `val_score`
+
+**test.py에서 로드 시 `MODEL_TYPE`을 학습 때와 반드시 동일하게 설정해야 합니다.**
+
+### Validation 데이터셋
+
+`USE_VALIDATION=True`로 첫 학습 실행 시 `data/val/0.pickle ~ {N-1}.pickle` 자동 생성 (고정 시드 2025).
+이후 학습에서는 이 파일들을 재사용합니다.
+
+---
+
+## 문서
+
+| 파일 | 내용 |
+|------|------|
+| `MDP_STRUCTURE.md` | MDP 전체 구조 (State/Action/Reward/Transition), GAT 아키텍처, 학습 알고리즘 |
+| `DANIEL_STRUCTURE.md` | DANIEL 모델 상세 (파일별 역할, 피처 정의, 환경 상호작용) |
+| `GA_STRUCTURE.md` | 유전 알고리즘 구조 |
+
+---
+
+## 중요 주의사항
+
+- **`FJSP-DRL-main/`**: 원본 FJSP 프로젝트 참고용 폴더. 이 프로젝트에서는 `model/` 폴더에 이식된 버전만 사용합니다.
+- **`model/main_model.py`의 파라미터 이름**: 원본 FJSP의 `fea_j_input_dim`, `num_heads_OAB` 등을 사용. `train.py`에서는 RCMPSP 이름(`fea_act_input_dim`, `num_heads_AAB`)을 사용하며, `trainer.py`가 `SimpleNamespace`로 매핑합니다.
+- **`fea_act_input_dim=10`**: `scheduling_env.py`의 `_get_state_daniel()`이 생성하는 차원과 항상 일치해야 합니다. 피처 수를 바꾸면 두 곳 모두 수정해야 합니다.
+- **DANIEL의 Critic**: 현재 REINFORCE 손실에는 포함되지 않습니다. 가치 네트워크(`v`)를 학습에 활용하려면 `trainer.py`의 loss 계산 부분을 수정해야 합니다.

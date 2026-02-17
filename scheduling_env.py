@@ -80,6 +80,9 @@ class SchedulingEnv:
         
         # 상태 출력 모드: 'pyg' (GNN 모델) 또는 'daniel' (DANIEL 모델)
         self.state_mode = env_params.get('state_mode', 'pyg')
+
+        # Step 진행 로그: 매 step마다 완료 activity 수 출력
+        self.step_log = env_params.get('step_log', False)
         
         # 문제 데이터 (reset에서 초기화)
         self.problem = None
@@ -158,6 +161,9 @@ class SchedulingEnv:
         self.step_count = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)  # 스텝 카운터
         self.done = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)  # 종료 여부
         
+        # Step 로그용 카운터
+        self._env_step_count = 0
+
         # ========================================
         # 가능한 액션 (Action Mask) - Eligible 기반
         # ========================================
@@ -446,13 +452,21 @@ class SchedulingEnv:
         
         all_done = self.move_next_state(self.BATCH_IDX)
 
+        if self.step_log:
+            self._env_step_count += 1
+            valid_mask = torch.arange(self.max_N_A, device=self.device).unsqueeze(0) < self.num_activities.unsqueeze(1)
+            valid_started = (self.activity_started & valid_mask).sum().item()
+            valid_ended = (self.activity_ended & valid_mask).sum().item()
+            total_valid = self.num_activities.sum().item()
+            print(f"  [Step {self._env_step_count}] Started: {int(valid_started)} / {int(total_valid)}, Ended: {int(valid_ended)} / {int(total_valid)}")
+
         if all_done:
             obj_value = self._get_obj()  # 목적함수값 반환 (양수)
             return None, obj_value, True
         else:
             self.state = self._get_state()
             return self.state, None, False
-    
+
     def step_pair(self, activity_ids, team_ids):
         """
         DANIEL 모델용 step: (activity_id, team_id) 쌍을 직접 받아 처리
@@ -470,14 +484,22 @@ class SchedulingEnv:
             self._schedule_activity(active_batch_idxs, activity_ids, team_ids)
         
         all_done = self.move_next_state(self.BATCH_IDX)
-        
+
+        if self.step_log:
+            self._env_step_count += 1
+            valid_mask = torch.arange(self.max_N_A, device=self.device).unsqueeze(0) < self.num_activities.unsqueeze(1)
+            valid_started = (self.activity_started & valid_mask).sum().item()
+            valid_ended = (self.activity_ended & valid_mask).sum().item()
+            total_valid = self.num_activities.sum().item()
+            print(f"  [Step {self._env_step_count}] Started: {int(valid_started)} / {int(total_valid)}, Ended: {int(valid_ended)} / {int(total_valid)}")
+
         if all_done:
             obj_value = self._get_obj()
             return None, obj_value, True
         else:
             self.state = self._get_state()
             return self.state, None, False
-    
+
     def _schedule_activity(self, batch_idxs, activity_ids, team_ids):
         """
         Activity를 팀에 할당하고 시작
@@ -875,15 +897,42 @@ class SchedulingEnv:
         ).reshape(B, N, preds.shape[2])
         all_preds_done = (pred_ended | ~valid_pred_mask).all(dim=2)  # (B, N)
         ready = ~self.activity_started & all_preds_done & valid_act  # (B, N)
-        
+
+        # ---- Schedulable mask (available_actions와 동일 5개 제약) ----
+        # Mutex check: 실행 중인 mutex 파트너 없음
+        mutex_data = self.activity_mutex  # (B, N, max_mutex)
+        max_mutex_dim = mutex_data.shape[2]
+        valid_mutex_mask = mutex_data >= 0
+        safe_mutex_ids = mutex_data.clamp(min=0)
+        mutex_partner_started = torch.gather(
+            self.activity_started, 1, safe_mutex_ids.reshape(B, -1)
+        ).reshape(B, N, max_mutex_dim)
+        mutex_partner_ended = torch.gather(
+            self.activity_ended, 1, safe_mutex_ids.reshape(B, -1)
+        ).reshape(B, N, max_mutex_dim)
+        mutex_running = mutex_partner_started & ~mutex_partner_ended & valid_mutex_mask
+        mutex_ok = ~mutex_running.any(dim=2)  # (B, N)
+
+        # Team availability: eligible 팀 중 최소 1개 available
+        team_avail_now = self.team_available_time <= current_time.unsqueeze(1)  # (B, T)
+        has_avail_team = (self.activity_eligible_teams & team_avail_now.unsqueeze(1)).any(dim=2)  # (B, N)
+
+        # Release time check per activity
+        act_proj_safe = self.activity_project.clamp(min=0)  # (B, N)
+        act_release = torch.gather(self.project_release_time, 1, act_proj_safe)  # (B, N)
+        act_released = act_release <= current_time.unsqueeze(1)  # (B, N)
+
+        # Schedulable = ready + mutex_ok + 팀 가용 + released
+        schedulable = ready & mutex_ok & has_avail_team & act_released  # (B, N)
+
         # 프로젝트 소속 마스크: (B, P, N)
         proj_range = torch.arange(P, device=device).view(1, -1, 1)
         proj_membership = (self.activity_project.unsqueeze(1) == proj_range)  # (B, P, N)
-        
-        # Candidate: 프로젝트별 첫 번째 ready activity
-        proj_ready = ready.unsqueeze(1) & proj_membership  # (B, P, N)
+
+        # Candidate: 프로젝트별 첫 번째 schedulable activity
+        proj_schedulable = schedulable.unsqueeze(1) & proj_membership  # (B, P, N)
         act_idx_exp = act_indices.unsqueeze(1).expand(-1, P, -1)  # (1, P, N)
-        masked_idx = torch.where(proj_ready, act_idx_exp.expand(B, -1, -1), N)
+        masked_idx = torch.where(proj_schedulable, act_idx_exp.expand(B, -1, -1), N)
         candidate = masked_idx.min(dim=2)[0].clamp(max=N - 1)  # (B, P)
         self.daniel_candidate = candidate  # trainer에서 사용
         
@@ -900,7 +949,7 @@ class SchedulingEnv:
         # ========================================
         # 3. fea_act (B, N, 10)
         # ========================================
-        act_proj_safe = self.activity_project.clamp(min=0)  # (B, N)
+        # act_proj_safe: 위 schedulable 계산에서 이미 정의됨
         
         f0 = self.activity_started.float()
         f1 = self.activity_ended.float()
@@ -971,23 +1020,27 @@ class SchedulingEnv:
         cand_started = torch.gather(self.activity_started, 1, cand_safe)  # (B, P)
         proj_done = proj_rem_count <= 0  # (B, P)
         
-        # team available at current time
-        team_avail_now = self.team_available_time <= current_time.unsqueeze(1)  # (B, T)
-        
+        # team_avail_now: 위 schedulable 계산에서 이미 정의됨
+
         # project released
         cand_proj_id = torch.gather(self.activity_project, 1, cand_safe)  # (B, P)
+        cand_proj_id = cand_proj_id.clamp(min=0, max=self.N_P - 1)  # padding activity의 -1 방지
         proj_release = torch.gather(self.project_release_time, 1, cand_proj_id)  # (B, P)
         proj_released = proj_release <= current_time.unsqueeze(1)  # (B, P)
         
         # ========================================
         # 6. dynamic_pair_mask (B, P, T) — True=masked
         # ========================================
+        # Mutex check for candidates
+        cand_mutex_ok = torch.gather(mutex_ok, 1, cand_safe)  # (B, P)
+
         dynamic_pair_mask = (
             ~elig_for_cand
             | cand_started.unsqueeze(2)
             | proj_done.unsqueeze(2)
             | ~team_avail_now.unsqueeze(1)
             | ~proj_released.unsqueeze(2)
+            | ~cand_mutex_ok.unsqueeze(2)   # mutex 파트너 실행 중이면 mask
         )
         
         # available pairs (inverse of mask)

@@ -74,7 +74,8 @@ class Scheduling_Trainer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             objective = env_params.get('objective', 'tardiness')
             model_type = trainer_params.get('model_type', 'gat').upper()
-            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{model_type}_REINFORCE"
+            alg_label = 'PPO' if trainer_params.get('algorithm_type', 'reinforce') == 'ppo' else 'REINFORCE'
+            self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{model_type}_{alg_label}"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
             print(f"✅ 체크포인트 저장 폴더 생성: {self.checkpoint_dir}")
         else:
@@ -108,11 +109,21 @@ class Scheduling_Trainer:
         
         # 모델 초기화
         if self.model_type == 'daniel':
-            # DANIEL 모델: argparse Namespace처럼 attribute 접근 가능한 config 생성
+            # DANIEL 모델: RCMPSP 파라미터 이름 → DANIEL 내부 이름 매핑
             from types import SimpleNamespace
             daniel_config = SimpleNamespace(
                 device=str(self.device),
-                **self.model_params,
+                # RCMPSP 이름(train.py) → DANIEL 원본 이름(model/main_model.py)
+                fea_j_input_dim=self.model_params['fea_act_input_dim'],   # activity feature dim
+                fea_m_input_dim=self.model_params['fea_team_input_dim'],  # team feature dim
+                num_heads_OAB=self.model_params['num_heads_AAB'],         # Activity Attention Block
+                num_heads_MAB=self.model_params['num_heads_TAB'],         # Team Attention Block
+                layer_fea_output_dim=self.model_params['layer_fea_output_dim'],
+                dropout_prob=self.model_params['dropout_prob'],
+                num_mlp_layers_actor=self.model_params['num_mlp_layers_actor'],
+                hidden_dim_actor=self.model_params['hidden_dim_actor'],
+                num_mlp_layers_critic=self.model_params['num_mlp_layers_critic'],
+                hidden_dim_critic=self.model_params['hidden_dim_critic'],
             )
             self.model = DANIEL(daniel_config).to(self.device)
             self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
@@ -132,7 +143,31 @@ class Scheduling_Trainer:
             print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
 
         self.result_train_loss_log = []
-        
+
+        # 알고리즘 타입 설정
+        self.algorithm_type = trainer_params.get('algorithm_type', 'reinforce')
+
+        # PPO 전용 초기화 (DANIEL 모델만 지원)
+        if self.algorithm_type == 'ppo':
+            if self.model_type != 'daniel':
+                raise ValueError("PPO는 DANIEL 모델에서만 지원됩니다. MODEL_TYPE='daniel'로 설정하세요.")
+            from copy import deepcopy
+            from ppo_utils import PPOMemory
+            self.model_old = deepcopy(self.model)
+            self.model_old.load_state_dict(self.model.state_dict())
+            self.eps_clip           = trainer_params.get('eps_clip', 0.2)
+            self.k_epochs           = trainer_params.get('k_epochs', 4)
+            self.gae_lambda         = trainer_params.get('gae_lambda', 0.98)
+            self.gamma              = trainer_params.get('gamma', 1.0)
+            self.vloss_coef         = trainer_params.get('vloss_coef', 0.5)
+            self.ploss_coef         = trainer_params.get('ploss_coef', 1.0)
+            self.tau                = trainer_params.get('tau', 0.0)
+            self.ppo_minibatch_size = trainer_params.get('ppo_minibatch_size', 32)
+            self.n_resample         = trainer_params.get('n_resample', 20)
+            self.ppo_memory         = PPOMemory(self.gamma, self.gae_lambda)
+            print(f"✅ PPO 초기화 완료 (eps_clip={self.eps_clip}, k_epochs={self.k_epochs}, "
+                  f"gae_lambda={self.gae_lambda}, n_resample={self.n_resample})")
+
         # Validation 데이터셋 미리 생성 (고정된 validation set)
         self.validation_problem = None
         if mode == 'train' and trainer_params.get('use_validation', False):
@@ -172,14 +207,15 @@ class Scheduling_Trainer:
             normalize_advantage = self.trainer_params.get('normalize_advantage', False)
             adv_norm_str = 'advnorm' if normalize_advantage else 'no_advnorm'
             timestamp = datetime.now().strftime("%m%d_%H%M")
+            alg_upper = self.algorithm_type.upper()
             run_name = self.trainer_params.get('wandb_run_name')
             if run_name is None:
-                run_name = f"{objective}_REINFORCE_P{n_p}_T{n_t}_bs{batch_size}_p{pomo_size}_lr{learning_rate}_{adv_norm_str}_{timestamp}"
-            
+                run_name = f"{objective}_{alg_upper}_P{n_p}_T{n_t}_bs{batch_size}_p{pomo_size}_lr{learning_rate}_{adv_norm_str}_{timestamp}"
+
             # Config 설정
             config = {
                 "objective": objective,
-                "algorithm": "REINFORCE",
+                "algorithm": alg_upper,
                 "model_type": self.model_type,
                 "N_P": self.env_params.get('N_P'),
                 "N_A_min": self.env_params.get('N_A_min'),
@@ -279,7 +315,9 @@ class Scheduling_Trainer:
                         'epoch': 0,
                         'train_score': None,
                         'val_score': val_obj_avg,
-                        'initial_val_score': initial_val_score
+                        'initial_val_score': initial_val_score,
+                        'algorithm_type': self.algorithm_type,
+                        'model_old_state_dict': self.model_old.state_dict() if self.algorithm_type == 'ppo' else None,
                     }, ckpt_path)
                     print(f"  💾 체크포인트 저장: {ckpt_path}")
                     
@@ -292,12 +330,21 @@ class Scheduling_Trainer:
                         wandb.log_artifact(artifact)
             start_epoch = 1  # 다음부터는 epoch 1부터 시작
         
+        # PPO: N_r 에피소드마다 새 학습 데이터 생성
+        ppo_problem = None
+
         for epoch in range(start_epoch, end_epoch+1):
             epoch_start_time = time.time()
-            
+
             # 학습 수행
             print(f"epoch: {epoch}")
-            train_loss_avg, train_reward_avg = self._train_one_batch()
+            if self.algorithm_type == 'ppo':
+                # N_r 에피소드마다 새 문제 데이터 생성
+                if ppo_problem is None or (epoch - start_epoch) % self.n_resample == 0:
+                    ppo_problem = generate_scheduling_data_batch(self.env_params)
+                train_loss_avg, train_reward_avg = self._train_ppo_one_batch(ppo_problem)
+            else:
+                train_loss_avg, train_reward_avg = self._train_one_batch()
             train_obj_avg = -train_reward_avg  # Reward는 -objective이므로 부호 반전
             epoch_elapsed_time = time.time() - epoch_start_time
             print(f"epoch: {epoch}, loss: {train_loss_avg:.4f}, reward: {train_reward_avg:.4f}, {objective_name}: {train_obj_avg:.4f}, time: {epoch_elapsed_time:.2f}s")
@@ -349,7 +396,9 @@ class Scheduling_Trainer:
                             'epoch': epoch,
                             'val_score': val_obj_avg,
                             'train_score': train_obj_avg,
-                            'initial_val_score': initial_val_score  # 개선율 계산용
+                            'initial_val_score': initial_val_score,  # 개선율 계산용
+                            'algorithm_type': self.algorithm_type,
+                            'model_old_state_dict': self.model_old.state_dict() if self.algorithm_type == 'ppo' else None,
                         }, best_model_path)
                         print(f"  🏆 Best Model 저장: {best_model_path} (Val {objective_name}: {val_obj_avg:.4f})")
                 
@@ -376,7 +425,9 @@ class Scheduling_Trainer:
                     'epoch': epoch,
                     'train_score': train_obj_avg,
                     'val_score': val_obj_avg if val_obj_avg is not None else None,
-                    'initial_val_score': initial_val_score  # 개선율 계산용
+                    'initial_val_score': initial_val_score,  # 개선율 계산용
+                    'algorithm_type': self.algorithm_type,
+                    'model_old_state_dict': self.model_old.state_dict() if self.algorithm_type == 'ppo' else None,
                 }, ckpt_path)
                 print(f"  💾 체크포인트 저장: {ckpt_path}")
                 
@@ -447,11 +498,205 @@ class Scheduling_Trainer:
         avg_reward = total_reward / self.trainer_params['accumulation_steps']
         
         return avg_loss, avg_reward
-    
+
+    # =================================================================
+    # PPO Training
+    # =================================================================
+
+    def _train_ppo_one_batch(self, problem):
+        """
+        PPO-Clip 알고리즘을 사용한 학습 (1 에피소드 롤아웃 + K-epoch 업데이트).
+
+        1. policy_old ← 현재 policy (hard copy)
+        2. No-grad 롤아웃: 상태/행동/가치/보상 수집 → PPOMemory
+        3. GAE advantage 계산
+        4. K epoch × mini-batch PPO 업데이트 (clip + value loss + entropy)
+        5. tau > 0이면 policy_old soft update
+
+        Args:
+            problem: generate_scheduling_data_batch()로 생성된 문제 배치
+
+        Returns:
+            (avg_loss, avg_reward)  — avg_reward = -avg_obj_value
+        """
+        from ppo_utils import eval_actions
+        import math
+
+        batch_total = self.env_params['batch_size'] * self.env_params['pomo_size']
+        entropy_coef = self.trainer_params.get('entropy_coef', 0.0)
+        grad_clip_norm = self.trainer_params.get('grad_clip_norm', None)
+
+        # 환경 device 결정
+        env_device = self.device if self.device_mode == 'gpu' else 'cpu'
+
+        # --------------------------------------------------
+        # 1. Hard-copy: policy_old ← policy (before rollout)
+        # --------------------------------------------------
+        self.model_old.load_state_dict(self.model.state_dict())
+
+        # --------------------------------------------------
+        # 2. Rollout (no_grad)
+        # --------------------------------------------------
+        memory = self.ppo_memory
+        memory.clear_memory()
+
+        env = SchedulingEnv(self.env_params, debug_env=self.debug_env, device=env_device)
+        env._reset(problem)
+
+        s = env._get_state()
+        done = False
+        step_count = 0
+
+        self.model.eval()
+        with torch.no_grad():
+            while not done:
+                step_count += 1
+
+                # State tensors → model device
+                fea_act  = s.fea_act_tensor.to(self.device)
+                act_mask = s.act_mask_tensor.to(self.device)
+                candidate = s.candidate_tensor.to(self.device)
+                fea_team  = s.fea_team_tensor.to(self.device)
+                team_mask = s.team_mask_tensor.to(self.device)
+                comp_idx  = s.comp_idx_tensor.to(self.device)
+                dyn_pmask = s.dynamic_pair_mask_tensor.to(self.device)
+                fea_pairs = s.fea_pairs_tensor.to(self.device)
+
+                # Forward pass → (pi, v)
+                pi, v = self.model(
+                    fea_act, act_mask, candidate, fea_team,
+                    team_mask, comp_idx, dyn_pmask, fea_pairs
+                )
+
+                # Sample action
+                dist = Categorical(pi)
+                action_flat = dist.sample()          # [B*P]
+                log_prob    = dist.log_prob(action_flat)  # [B*P]
+
+                # Store state before stepping
+                memory.push_state(s)
+
+                # Step environment
+                N_T      = env.N_T
+                proj_idx = action_flat // N_T
+                team_idx = action_flat % N_T
+                cand     = env.daniel_candidate  # [B*P, P]
+                activity_idx = cand[
+                    torch.arange(batch_total, device=env.device),
+                    proj_idx.to(env.device)
+                ]
+
+                s, obj_value, done = env.step_pair(
+                    activity_idx,
+                    team_idx.to(env.device)
+                )
+
+                # Reward: sparse — 0 at intermediate steps, -objective at terminal
+                if done:
+                    reward = -obj_value.to(self.device)
+                else:
+                    reward = torch.zeros(batch_total, device=self.device)
+
+                done_tensor = torch.full((batch_total,), done, dtype=torch.bool, device=self.device)
+
+                memory.push_transition(
+                    action_flat.to(self.device),
+                    log_prob.to(self.device),
+                    v.squeeze(-1).to(self.device),
+                    reward,
+                    done_tensor
+                )
+
+        # Final objective for logging
+        final_obj = env._get_obj().mean().item()
+
+        # --------------------------------------------------
+        # 3. GAE Advantages
+        # --------------------------------------------------
+        t_data = memory.transpose_data()
+        # Move all to model device
+        t_data = tuple(t.to(self.device) for t in t_data)
+        t_advantage, v_target = memory.get_gae_advantages()
+        t_advantage = t_advantage.to(self.device)
+        v_target    = v_target.to(self.device)
+
+        # 논문: Advantage batch normalization (학습 안정화)
+        t_advantage = (t_advantage - t_advantage.mean()) / (t_advantage.std() + 1e-8)
+
+        full_batch_size = t_data[-1].shape[0]  # B*P*T
+        num_mini = math.ceil(full_batch_size / self.ppo_minibatch_size)
+
+        # --------------------------------------------------
+        # 4. K-epoch PPO Updates
+        # --------------------------------------------------
+        self.model.train()
+        total_loss   = 0.0
+        total_v_loss = 0.0
+        update_count = 0
+
+        for _ in range(self.k_epochs):
+            for i in range(num_mini):
+                start = i * self.ppo_minibatch_size
+                end   = min(start + self.ppo_minibatch_size, full_batch_size)
+
+                # Forward through CURRENT policy
+                pi_new, v_new = self.model(
+                    t_data[0][start:end],   # fea_act
+                    t_data[1][start:end],   # act_mask
+                    t_data[6][start:end],   # candidate
+                    t_data[2][start:end],   # fea_team
+                    t_data[3][start:end],   # team_mask
+                    t_data[5][start:end],   # comp_idx
+                    t_data[4][start:end],   # dynamic_pair_mask
+                    t_data[7][start:end],   # fea_pairs
+                )
+
+                actions_batch   = t_data[8][start:end]   # action
+                old_logprobs    = t_data[12][start:end]  # stored log_probs
+                adv_batch       = t_advantage[start:end]
+                v_target_batch  = v_target[start:end]
+
+                # Evaluate actions with new policy
+                new_logprobs, ent = eval_actions(pi_new, actions_batch)
+
+                # PPO ratio and clipped surrogate loss
+                ratios = torch.exp(new_logprobs - old_logprobs.detach())
+                surr1  = ratios * adv_batch
+                surr2  = torch.clamp(ratios, 1.0 - self.eps_clip, 1.0 + self.eps_clip) * adv_batch
+                p_loss = -torch.min(surr1, surr2).mean()
+
+                # Value loss (MSE)
+                v_loss = F.mse_loss(v_new.squeeze(-1), v_target_batch)
+
+                # Entropy bonus (negative entropy = discourage exploration, so subtract)
+                ent_loss = -ent
+
+                loss = self.ploss_coef * p_loss + self.vloss_coef * v_loss + entropy_coef * ent_loss
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                if grad_clip_norm is not None:
+                    clip_grad_norm_(self.model.parameters(), grad_clip_norm)
+                self.optimizer.step()
+
+                total_loss   += loss.item()
+                total_v_loss += v_loss.item()
+                update_count += 1
+
+        # --------------------------------------------------
+        # 5. Soft update policy_old (if tau > 0)
+        # --------------------------------------------------
+        if self.tau > 0:
+            for old_p, new_p in zip(self.model_old.parameters(), self.model.parameters()):
+                old_p.data.copy_(self.tau * old_p.data + (1.0 - self.tau) * new_p.data)
+
+        avg_loss   = total_loss / max(update_count, 1)
+        avg_reward = -final_obj  # run()에서 다시 부호 반전함
+
+        return avg_loss, avg_reward
+
     def train_one_minibatch(self):
         """REINFORCE 알고리즘을 사용한 학습"""
-        # Anomaly detection for debugging in-place operation issues
-        torch.autograd.set_detect_anomaly(True)
         
         # 학습 데이터 생성 seed 고정 옵션 (디버깅용)
         training_seed_fix = self.trainer_params.get('training_seed_fix', False)
@@ -879,7 +1124,12 @@ class Scheduling_Trainer:
             # 모델 가중치 로드
             self.model.load_state_dict(checkpoint['model_state_dict'])
             print(f"✅ 모델 가중치 로드 완료")
-            
+
+            # PPO: model_old 복원
+            if self.algorithm_type == 'ppo' and 'model_old_state_dict' in checkpoint and checkpoint['model_old_state_dict'] is not None:
+                self.model_old.load_state_dict(checkpoint['model_old_state_dict'])
+                print(f"✅ PPO policy_old 가중치 로드 완료")
+
             # Optimizer 상태 로드 (있는 경우)
             if 'optimizer_state_dict' in checkpoint:
                 self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -917,182 +1167,164 @@ class Scheduling_Trainer:
     
     def _prepare_validation_dataset(self, validation_batch_size=10, validation_pomo_size=1):
         """
-        고정된 validation 데이터셋 준비 (개별 파일로 저장: 0.pickle, 1.pickle, ...)
+        고정된 validation 데이터셋 준비 (단일 배치 파일: val_batch.pickle)
         모든 epoch에서 동일한 데이터로 평가하기 위함
-        
+
         Args:
             validation_batch_size: Validation 인스턴스 수
             validation_pomo_size: Validation POMO 크기 (보통 1)
         """
         # 시드 고정하여 재현 가능한 validation set 생성
         validation_seed = 2025
-        
+
         # Validation 데이터 폴더 경로
         val_data_folder = './data/val'
         os.makedirs(val_data_folder, exist_ok=True)
-        
-        # 모든 파일이 존재하는지 확인
-        all_files_exist = all(
-            os.path.exists(os.path.join(val_data_folder, f"{i}.pickle"))
-            for i in range(validation_batch_size)
-        )
-        
-        if all_files_exist:
-            print(f"📂 기존 Validation 데이터셋 로드 (파일 개수: {validation_batch_size})")
-            print(f"   폴더: {val_data_folder}")
-            print(f"   파일: 0.pickle ~ {validation_batch_size-1}.pickle")
-            print(f"✅ Validation 데이터셋 로드 완료 (개별 파일 형식)")
-            # validation_problem은 None으로 설정 (개별 파일 사용)
-            self.validation_problem = None
+
+        # 단일 배치 파일 경로
+        batch_file_path = os.path.join(val_data_folder, 'val_batch.pickle')
+
+        if os.path.exists(batch_file_path):
+            # 기존 배치 파일 로드하여 validation_problem에 저장
+            with open(batch_file_path, 'rb') as f:
+                self.validation_problem = pickle.load(f)
+            print(f"📂 기존 Validation 배치 데이터셋 로드: {batch_file_path}")
+            print(f"   인스턴스 수: {validation_batch_size}")
+            print(f"✅ Validation 데이터셋 로드 완료 (배치 형식)")
             return
-        
+
         # 파일이 없으면 새로 생성
         print(f"📦 새로운 Validation 데이터셋 생성 중... (인스턴스 수: {validation_batch_size})")
-        
+
         # 모든 랜덤 시드 저장 (복원용)
         original_random_state = random.getstate()
         original_np_state = np.random.get_state()
         original_torch_state = torch.get_rng_state()
         if torch.cuda.is_available():
             original_cuda_rng_state = torch.cuda.get_rng_state()
-        
+
         # 모든 랜덤 시드 고정
         random.seed(validation_seed)
         np.random.seed(validation_seed)
         torch.manual_seed(validation_seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(validation_seed)
-        
-        # 각 인스턴스를 개별 파일로 생성
-        for i in range(validation_batch_size):
-            # 단일 배치 환경 파라미터
-            single_env_params = copy.deepcopy(self.env_params)
-            single_env_params['batch_size'] = 1
-            single_env_params['pomo_size'] = 1
-            
-            # 단일 인스턴스 데이터 생성
-            single_problem = generate_scheduling_data_batch(single_env_params)
-            
-            # 파일로 저장
-            file_path = os.path.join(val_data_folder, f"{i}.pickle")
-            with open(file_path, 'wb') as f:
-                pickle.dump(single_problem, f)
-        
+
+        # 배치 전체를 한 번에 생성
+        val_env_params = copy.deepcopy(self.env_params)
+        val_env_params['batch_size'] = validation_batch_size
+        val_env_params['pomo_size'] = validation_pomo_size
+
+        batch_problem = generate_scheduling_data_batch(val_env_params)
+
+        # 파일로 저장
+        with open(batch_file_path, 'wb') as f:
+            pickle.dump(batch_problem, f)
+
         # RNG 상태 복원
         random.setstate(original_random_state)
         np.random.set_state(original_np_state)
         torch.set_rng_state(original_torch_state)
         if torch.cuda.is_available():
             torch.cuda.set_rng_state(original_cuda_rng_state)
-        
+
+        # 메모리에도 보관
+        self.validation_problem = batch_problem
+
         print(f"✅ Validation 데이터셋 생성 완료 (고정 시드: {validation_seed})")
-        print(f"💾 저장 위치: {val_data_folder}")
-        print(f"   파일: 0.pickle ~ {validation_batch_size-1}.pickle")
-        print(f"   ℹ️  다음 학습부터는 이 파일들을 재사용합니다.")
-        
-        # validation_problem은 None으로 설정 (개별 파일 사용)
-        self.validation_problem = None
+        print(f"💾 저장 위치: {batch_file_path}")
+        print(f"   인스턴스 수: {validation_batch_size}, POMO: {validation_pomo_size}")
+        print(f"   ℹ️  다음 학습부터는 이 파일을 재사용합니다.")
     
     def _eval_validation(self, validation_batch_size=10, validation_pomo_size=1):
         """
-        Validation 평가 함수: 개별 파일로 저장된 데이터로 모델 성능 평가 (Greedy policy)
-        
+        Validation 평가 함수: 배치 데이터로 모델 성능 평가 (Greedy policy)
+        학습과 동일하게 배치 단위로 한 번에 처리
+
         Args:
             validation_batch_size: Validation 인스턴스 수
             validation_pomo_size: Validation POMO 크기 (보통 1)
-        
+
         Returns:
             avg_score: 평균 validation score (목적함수값)
         """
         self.model.eval()
-        
-        # Validation 데이터 폴더
-        val_data_folder = './data/val'
-        
-        # 단일 배치 환경 파라미터
-        val_env_params = copy.deepcopy(self.env_params)
-        val_env_params['batch_size'] = 1
-        val_env_params['pomo_size'] = 1
-        
-        # device_mode에 따라 환경 device 결정
-        if self.device_mode == 'gpu':
-            val_env_device = self.device
+
+        # Validation 데이터 로드 (메모리 캐시 또는 파일)
+        if self.validation_problem is not None:
+            problem = self.validation_problem
         else:
-            val_env_device = 'cpu'
-        
-        # 모든 validation 인스턴스 평가
-        obj_values = []
-        
-        for i in range(validation_batch_size):
-            file_path = os.path.join(val_data_folder, f"{i}.pickle")
-            
-            # 파일 로드
-            with open(file_path, 'rb') as f:
+            batch_file_path = os.path.join('./data/val', 'val_batch.pickle')
+            with open(batch_file_path, 'rb') as f:
                 problem = pickle.load(f)
-            
-            # 환경 초기화
-            val_env = SchedulingEnv(val_env_params, debug_env=False, device=val_env_device)
-            val_env._reset(problem)
-            
-            if self.model_type == 'gat':
-                # GAT 모드: action_to_pair 전달
-                action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
-                self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
-            
-            done = False
-            s = val_env._get_state()
-            
-            with torch.no_grad():
-                while not done:
-                    if self.model_type == 'daniel':
-                        # DANIEL Greedy: argmax on pi
-                        fea_act = s.fea_act_tensor.to(self.device)
-                        act_mask = s.act_mask_tensor.to(self.device)
-                        candidate = s.candidate_tensor.to(self.device)
-                        fea_team = s.fea_team_tensor.to(self.device)
-                        team_mask = s.team_mask_tensor.to(self.device)
-                        comp_idx = s.comp_idx_tensor.to(self.device)
-                        dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
-                        fea_pairs = s.fea_pairs_tensor.to(self.device)
-                        
-                        pi, v = self.model(
-                            fea_act, act_mask, candidate, fea_team,
-                            team_mask, comp_idx, dynamic_pair_mask, fea_pairs
-                        )
-                        
-                        # Greedy: argmax
-                        action_flat = torch.argmax(pi, dim=1)
-                        
-                        N_T = val_env.N_T
-                        proj_idx = action_flat // N_T
-                        team_idx = action_flat % N_T
-                        
-                        cand = val_env.daniel_candidate
-                        activity_idx = cand[torch.arange(1, device=val_env.device), proj_idx.to(val_env.device)]
-                        
-                        s, obj_value, done = val_env.step_pair(
-                            activity_idx,
-                            team_idx.to(val_env.device)
-                        )
+            self.validation_problem = problem  # 캐시
+
+        # 배치 환경 파라미터
+        val_env_params = copy.deepcopy(self.env_params)
+        val_env_params['batch_size'] = validation_batch_size
+        val_env_params['pomo_size'] = validation_pomo_size
+
+        # device_mode에 따라 환경 device 결정
+        env_device = self.device if self.device_mode == 'gpu' else 'cpu'
+
+        batch_total = validation_batch_size * validation_pomo_size
+
+        # 환경 초기화 (배치 전체를 한 번에)
+        val_env = SchedulingEnv(val_env_params, debug_env=False, device=env_device)
+        val_env._reset(problem)
+
+        if self.model_type == 'gat':
+            action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
+            self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
+
+        done = False
+        s = val_env._get_state()
+
+        with torch.no_grad():
+            while not done:
+                if self.model_type == 'daniel':
+                    fea_act = s.fea_act_tensor.to(self.device)
+                    act_mask = s.act_mask_tensor.to(self.device)
+                    candidate = s.candidate_tensor.to(self.device)
+                    fea_team = s.fea_team_tensor.to(self.device)
+                    team_mask = s.team_mask_tensor.to(self.device)
+                    comp_idx = s.comp_idx_tensor.to(self.device)
+                    dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
+                    fea_pairs = s.fea_pairs_tensor.to(self.device)
+
+                    pi, v = self.model(
+                        fea_act, act_mask, candidate, fea_team,
+                        team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                    )
+
+                    # Greedy: argmax
+                    action_flat = torch.argmax(pi, dim=1)
+
+                    N_T = val_env.N_T
+                    proj_idx = action_flat // N_T
+                    team_idx = action_flat % N_T
+
+                    cand = val_env.daniel_candidate
+                    activity_idx = cand[
+                        torch.arange(batch_total, device=val_env.device),
+                        proj_idx.to(val_env.device)
+                    ]
+
+                    s, obj_value, done = val_env.step_pair(
+                        activity_idx,
+                        team_idx.to(val_env.device)
+                    )
+                else:
+                    action = self.model.get_max_action(s)
+                    if self.device_mode == 'gpu':
+                        s, obj_value, done = val_env.step(action)
                     else:
-                        # GAT Greedy action 선택
-                        action = self.model.get_max_action(s)
-                        
-                        if self.device_mode == 'gpu':
-                            s, obj_value, done = val_env.step(action)
-                        else:
-                            s, obj_value, done = val_env.step(action.to('cpu'))
-            
-            # 목적함수값 계산
-            obj_value = val_env._get_obj()
-            if isinstance(obj_value, torch.Tensor):
-                obj_values.append(obj_value.item())
-            else:
-                obj_values.append(obj_value)
-        
-        # 평균 계산
-        avg_obj_value = sum(obj_values) / len(obj_values)
-        
+                        s, obj_value, done = val_env.step(action.to('cpu'))
+
+        # 배치 전체 목적함수값 계산 → 평균
+        obj_values = val_env._get_obj()  # (batch_total,)
+        avg_obj_value = obj_values.mean().item()
+
         self.model.train()
         return avg_obj_value
 

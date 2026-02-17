@@ -1,0 +1,40 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 72.9000, time: 3.52s
+  💾 체크포인트 저장: ./checkpoints/20260211_191142_tardiness_REINFORCE\epoch0.pt
+epoch: 1
+epoch: 1, loss: -3.5661, reward: 79.7188, tardiness: -79.7188, time: 66.70s
+epoch: 2
+Traceback (most recent call last):
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\train.py", line 245, in <module>
+    trainer.run()
+    ~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 269, in run
+    train_loss_avg, train_reward_avg = self._train_one_batch()
+                                       ~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 383, in _train_one_batch
+    loss, obj_value, step_count, batch_info = self.train_one_minibatch()
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\trainer.py", line 485, in train_one_minibatch
+    action, log_prob, entropy = self.model.get_action(s)
+                                ~~~~~~~~~~~~~~~~~~~~~^^^
+  File "c:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\gnn_model.py", line 155, in get_action
+    entropy_b = policy_b.entropy()
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\torch\distributions\categorical.py", line 156, in entropy
+    logits = torch.clamp(self.logits, min=min_real)
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\torch\fx\traceback.py", line 189, in format_stack
+    return traceback.format_list(traceback.extract_stack()[:-1])
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\traceback.py", line 260, in extract_stack
+    stack = StackSummary.extract(walk_stack(f), limit=limit)
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\traceback.py", line 449, in extract
+    return klass._extract_from_extended_frame_gen(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        extended_frame_gen(), limit=limit, lookup_lines=lookup_lines,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        capture_locals=capture_locals)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\traceback.py", line 480, in _extract_from_extended_frame_gen
+    fnames.add(filename)
+    ~~~~~~~~~~^^^^^^^^^^
+KeyboardInterrupt
