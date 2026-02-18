@@ -189,7 +189,7 @@ if __name__ == "__main__":
         }
     elif MODEL_TYPE == 'daniel':
         model_params = {
-            'fea_act_input_dim': 10,
+            'fea_act_input_dim': 12,
             'fea_team_input_dim': 8,
             'num_heads_AAB': [4, 4],
             'num_heads_TAB': [4, 4],

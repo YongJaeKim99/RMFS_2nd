@@ -18,7 +18,7 @@ from data_generator import generate_scheduling_data_batch
 @dataclass
 class EnvState:
     """DANIEL 모델용 상태 정의 (RCMPSP 환경). Action space: (activity, team) 쌍."""
-    fea_act_tensor: torch.Tensor = None       # (B, N, 10) activity features
+    fea_act_tensor: torch.Tensor = None       # (B, N, 12) activity features
     act_mask_tensor: torch.Tensor = None       # (B, N, 3)  attention mask
     fea_team_tensor: torch.Tensor = None       # (B, T, 8)  team features
     team_mask_tensor: torch.Tensor = None      # (B, T, T)  team attention mask
@@ -1030,7 +1030,7 @@ class SchedulingEnv:
         Action space: (activity, team) 쌍. Candidate = 전체 N개 activity (마스킹으로 제어)
 
         RCMPSP에 맞게 적응된 피처:
-            fea_act: (B, N, 10) - activity feature vectors
+            fea_act: (B, N, 12) - activity feature vectors
             act_mask: (B, N, 3) - predecessor/successor attention mask
             fea_team: (B, T, 8) - team feature vectors
             team_mask: (B, T, T) - team attention mask
@@ -1116,33 +1116,47 @@ class SchedulingEnv:
         proj_tot_work = (self.activity_duration.unsqueeze(1) * proj_valid.float()).sum(dim=2).clamp(min=1)  # (B, P)
         
         # ========================================
-        # 3. fea_act (B, N, 10)
+        # 3. fea_act (B, N, 12)
         # ========================================
         # act_proj_safe: 위 schedulable 계산에서 이미 정의됨
-        
+
         f0 = self.activity_started.float()
         f1 = self.activity_ended.float()
         f2 = self.activity_duration / max_dur
+
+        # Min PT / Span over eligible teams (논문 피처 1, 3 복구)
+        elig_mask = self.activity_eligible_teams  # (B, N, T) bool
+        min_fill = torch.where(elig_mask, self.activity_team_duration,
+                               torch.full_like(self.activity_team_duration, float('inf')))
+        min_pt_raw = min_fill.min(dim=2)[0]  # (B, N)
+        min_pt = torch.where(min_pt_raw.isinf(), torch.zeros_like(min_pt_raw), min_pt_raw)
+        max_fill = torch.where(elig_mask, self.activity_team_duration,
+                               torch.full_like(self.activity_team_duration, float('-inf')))
+        max_pt_raw = max_fill.max(dim=2)[0]  # (B, N)
+        max_pt = torch.where(max_pt_raw.isinf(), torch.zeros_like(max_pt_raw), max_pt_raw)
+        f_minpt = min_pt / max_dur          # (B, N) 논문 피처 1
+        f_span  = (max_pt - min_pt) / max_dur  # (B, N) 논문 피처 3
+
         f3 = self.activity_remaining_time / max_dur
-        
+
         # Predecessor completion ratio
         pred_done_cnt = (pred_ended & valid_pred_mask).sum(dim=2).float()
         total_pred_cnt = valid_pred_mask.sum(dim=2).float().clamp(min=1)
         f4 = pred_done_cnt / total_pred_cnt
-        
+
         f5 = ready.float()  # currently ready (simplified waiting indicator)
         f6 = torch.where(
             self.activity_started,
             self.activity_start_time / max_time_val,
             torch.zeros_like(self.activity_start_time)
         )
-        
+
         # Project remaining act/work ratios (mapped per activity)
         f7 = torch.gather(proj_rem_count, 1, act_proj_safe) / torch.gather(proj_tot_count, 1, act_proj_safe)
         f8 = torch.gather(proj_rem_work, 1, act_proj_safe) / torch.gather(proj_tot_work, 1, act_proj_safe)
         f9 = self.activity_eligible_teams.sum(dim=2).float() / T
-        
-        fea_act = torch.stack([f0, f1, f2, f3, f4, f5, f6, f7, f8, f9], dim=2)
+
+        fea_act = torch.stack([f0, f1, f2, f_minpt, f_span, f3, f4, f5, f6, f7, f8, f9], dim=2)
         fea_act[~valid_act] = 0
         
         # Normalization (FJSP 방식: activity 축 기준 mean/std)

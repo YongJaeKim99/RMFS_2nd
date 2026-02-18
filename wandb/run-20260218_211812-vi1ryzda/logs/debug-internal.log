@@ -1,0 +1,15 @@
+{"time":"2026-02-18T21:18:12.2169058+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260218_211812-vi1ryzda\\logs\\debug-core.log"}
+{"time":"2026-02-18T21:18:12.5686604+09:00","level":"INFO","msg":"created new stream","id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:12.5686604+09:00","level":"INFO","msg":"stream: started","id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:12.5686604+09:00","level":"INFO","msg":"handler: started","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:12.5686604+09:00","level":"INFO","msg":"sender: started","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:12.5686604+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:13.0065543+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-18T21:18:25.2828473+09:00","level":"INFO","msg":"stream: closing","id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:25.2828473+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-18T21:18:25.2828473+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-18T21:18:27.8707473+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-18T21:18:28.2067715+09:00","level":"INFO","msg":"handler: closed","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:28.2067715+09:00","level":"INFO","msg":"sender: closed","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:28.2067715+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"vi1ryzda"}
+{"time":"2026-02-18T21:18:28.2067715+09:00","level":"INFO","msg":"stream: closed","id":"vi1ryzda"}

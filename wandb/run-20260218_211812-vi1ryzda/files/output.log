@@ -1,0 +1,64 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 2065.8584, time: 2.41s
+  💾 체크포인트 저장: ./checkpoints/20260218_211811_tardiness_DANIEL_PPO\epoch0.pt
+epoch: 1
+epoch: 1, loss: 2372884.6250, reward: -3364.8889, tardiness: 3364.8889, time: 1.20s
+epoch: 2
+epoch: 2, loss: 2569661.5625, reward: -3512.8889, tardiness: 3512.8889, time: 1.18s
+epoch: 3
+epoch: 3, loss: 2199868.3750, reward: -3254.0000, tardiness: 3254.0000, time: 1.13s
+epoch: 4
+epoch: 4, loss: 2313608.2500, reward: -3321.6667, tardiness: 3321.6667, time: 1.16s
+epoch: 5
+epoch: 5, loss: 2967958.4375, reward: -3766.8894, tardiness: 3766.8894, time: 1.16s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2769.2781 (-34.05%), time: 1.62s
+  💾 체크포인트 저장: ./checkpoints/20260218_211811_tardiness_DANIEL_PPO\epoch5.pt
+epoch: 6
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 361, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 349, in run
+    train_loss_avg, train_reward_avg = self._train_ppo_one_batch(ppo_problem)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 572, in _train_ppo_one_batch
+    pi, v = self.model(
+            ^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 187, in forward
+    fea_j, fea_m, fea_j_global, fea_m_global = self.feature_exact(
+                                               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 123, in forward
+    fea_m = self.mch_attention_blocks[layer](fea_m, mch_mask, comp_val_layer)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 253, in forward
+    h_heads = [att(h, mch_mask, comp_val) for att in self.attentions]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 190, in forward
+    attention = torch.where(mch_mask > 0, e, zero_vec)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

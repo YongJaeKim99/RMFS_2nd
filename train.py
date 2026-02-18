@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'reinforce'   # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
     # 'reinforce': REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
     # 'ppo':       PPO-Clip + GAE (DANIEL 전용, 논문 알고리즘)
 
@@ -32,9 +32,9 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS                = 200       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 64       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        BATCH_SIZE            = 3       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
-        VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
+        VALIDATION_INTERVAL   = 10         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 1e-6}}  # 논문: 3×10⁻⁴
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     elif MODEL_TYPE == 'daniel':
          # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
         model_params = {
-             'fea_act_input_dim': 10,
+             'fea_act_input_dim': 12,
              'fea_team_input_dim': 8,
              'num_heads_AAB': [4, 4],
              'num_heads_TAB': [4, 4],
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         '''
         model_params = {
             # DAN (Dual Attention Network) 파라미터
-            'fea_act_input_dim': 10,    # Activity 피처 차원 (env 출력과 일치)
+            'fea_act_input_dim': 12,    # Activity 피처 차원 (env 출력과 일치)
             'fea_team_input_dim': 8,    # Team 피처 차원 (env 출력과 일치)
             'num_heads_AAB': [8, 8, 8],    # Activity Attention Block 헤드 수 (3층)
             'num_heads_TAB': [8, 8, 8],    # Team Attention Block 헤드 수 (3층)
