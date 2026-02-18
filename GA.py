@@ -93,6 +93,8 @@ class GeneticAlgorithm:
         mutation_rate: float = 0.2,
         tournament_size: int = 5,
         decode_mode: str = "batch",  # "batch" 또는 "immediate"
+        release_mode: str = "wait",  # "wait": release time까지 기다림, "skip": 아직이면 건너뜀
+        mutex_mode: str = "wait",    # "wait": mutex 끝날 때까지 기다림, "skip": 진행 중이면 건너뜀
         verbose: bool = True  # 세대별 진행상황 출력 여부
     ):
         self.projects = projects
@@ -103,6 +105,8 @@ class GeneticAlgorithm:
         self.mutation_rate = mutation_rate
         self.tournament_size = tournament_size
         self.decode_mode = decode_mode  # "batch" 또는 "immediate"
+        self.release_mode = release_mode  # "wait" 또는 "skip"
+        self.mutex_mode = mutex_mode      # "wait" 또는 "skip"
         self.verbose = verbose
         
         # 모든 activities를 수집
@@ -201,47 +205,67 @@ class GeneticAlgorithm:
                 
                 # 선행 작업 완료 체크
                 all_predecessors_done = True
-                earliest_start = project.release_time
-                
+                earliest_start = 0
+
                 for pred_id in activity.predecessors:
                     if pred_id not in scheduled_activities:
-                        # 선행 작업이 아직 스케줄되지 않음
                         all_predecessors_done = False
                         break
                     else:
-                        # 선행 작업의 완료 시간 고려
                         pred_end_time = schedule[pred_id][1]
                         earliest_start = max(earliest_start, pred_end_time)
-                
-                # 선행 작업이 완료되지 않았으면 skip (다음 반복에서 다시 시도)
+
                 if not all_predecessors_done:
                     continue
-                
-                # 동시 수행 불가 제약 확인 (mutually exclusive)
-                for mutex_id in activity.mutually_exclusive:
-                    if mutex_id in scheduled_activities:
-                        # 동시 수행 불가인 activity가 이미 스케줄되어 있으면
-                        # 그 activity가 끝난 후에 시작해야 함
-                        mutex_end_time = schedule[mutex_id][1]
-                        earliest_start = max(earliest_start, mutex_end_time)
-                
+
+                # Release time 제약
+                if self.release_mode == "skip":
+                    # skip: 팀이 release time 전에 가용하면 건너뜀
+                    if team_available_time[team_id] < project.release_time:
+                        continue
+                    earliest_start = max(earliest_start, project.release_time)
+                else:
+                    # wait: release time까지 기다림
+                    earliest_start = max(earliest_start, project.release_time)
+
+                # Mutex 제약
+                if self.mutex_mode == "skip":
+                    # skip: mutex activity가 아직 진행 중이면 건너뜀
+                    mutex_blocked = False
+                    for mutex_id in activity.mutually_exclusive:
+                        if mutex_id in scheduled_activities:
+                            mutex_end_time = schedule[mutex_id][1]
+                            if team_available_time[team_id] < mutex_end_time:
+                                # 팀이 가용한 시점에 mutex가 아직 진행 중
+                                mutex_blocked = True
+                                break
+                            earliest_start = max(earliest_start, mutex_end_time)
+                    if mutex_blocked:
+                        continue
+                else:
+                    # wait: mutex 끝날 때까지 기다림
+                    for mutex_id in activity.mutually_exclusive:
+                        if mutex_id in scheduled_activities:
+                            mutex_end_time = schedule[mutex_id][1]
+                            earliest_start = max(earliest_start, mutex_end_time)
+
                 # 팀의 가용 시간 확인
                 earliest_start = max(earliest_start, team_available_time[team_id])
-                
+
                 # 스케줄에 추가
                 start_time = earliest_start
                 end_time = start_time + activity.duration
                 schedule[act_id] = (start_time, end_time, team_id)
                 scheduled_activities.add(act_id)
                 newly_scheduled += 1
-                
+
                 # 팀 가용 시간 업데이트
                 team_available_time[team_id] = end_time
-            
+
             # 이번 반복에서 새로 스케줄된 activity가 없으면 종료
             if newly_scheduled == 0:
                 break
-        
+
         return schedule
     
     def _decode_immediate(self, solution: Solution) -> Dict[int, Tuple[int, int, int]]:
@@ -281,38 +305,50 @@ class GeneticAlgorithm:
                 # 선행 작업 완료 체크
                 all_predecessors_done = True
                 earliest_start = 0
-                
+
                 for pred_id in activity.predecessors:
                     if pred_id not in scheduled_activities:
-                        # 선행 작업이 아직 스케줄되지 않음
                         all_predecessors_done = False
                         break
                     else:
-                        # 선행 작업의 완료 시간 고려
                         pred_end_time = schedule[pred_id][1]
                         earliest_start = max(earliest_start, pred_end_time)
-                
-                # 선행 작업이 완료되지 않았으면 skip
+
                 if not all_predecessors_done:
                     continue
-                
-                # 팀의 현재 가용 시간 확인
+
                 team_ready_time = team_available_time[team_id]
-                
-                # Release time 체크: 팀이 가용한 시점에 아직 release time이 안되었으면 skip
-                if team_ready_time < project.release_time:
-                    continue
-                
-                # 동시 수행 불가 제약 확인 (mutually exclusive) - 기다림
-                for mutex_id in activity.mutually_exclusive:
-                    if mutex_id in scheduled_activities:
-                        # 동시 수행 불가인 activity가 이미 스케줄되어 있으면
-                        # 그 activity가 끝난 후에 시작해야 함
-                        mutex_end_time = schedule[mutex_id][1]
-                        earliest_start = max(earliest_start, mutex_end_time)
-                
-                # 실제 시작 시간 계산 (선행 작업, 팀 가용 시간, release time 고려)
-                earliest_start = max(earliest_start, team_ready_time, project.release_time)
+
+                # Release time 제약
+                if self.release_mode == "skip":
+                    if team_ready_time < project.release_time:
+                        continue
+                    earliest_start = max(earliest_start, project.release_time)
+                else:
+                    # wait: release time까지 기다림
+                    earliest_start = max(earliest_start, project.release_time)
+
+                # Mutex 제약
+                if self.mutex_mode == "skip":
+                    mutex_blocked = False
+                    for mutex_id in activity.mutually_exclusive:
+                        if mutex_id in scheduled_activities:
+                            mutex_end_time = schedule[mutex_id][1]
+                            if team_ready_time < mutex_end_time:
+                                mutex_blocked = True
+                                break
+                            earliest_start = max(earliest_start, mutex_end_time)
+                    if mutex_blocked:
+                        continue
+                else:
+                    # wait: mutex 끝날 때까지 기다림
+                    for mutex_id in activity.mutually_exclusive:
+                        if mutex_id in scheduled_activities:
+                            mutex_end_time = schedule[mutex_id][1]
+                            earliest_start = max(earliest_start, mutex_end_time)
+
+                # 실제 시작 시간 계산
+                earliest_start = max(earliest_start, team_ready_time)
                 
                 # 스케줄에 추가
                 start_time = earliest_start
@@ -479,6 +515,8 @@ class GeneticAlgorithm:
                 print("  - Batch: 모든 페어를 순회한 후 다시 처음부터")
             elif self.decode_mode == "immediate":
                 print("  - Immediate: activity 스케줄 시 즉시 처음부터 재시작")
+            print(f"Release 모드: {self.release_mode} ({'기다림' if self.release_mode == 'wait' else '건너뜀'})")
+            print(f"Mutex 모드: {self.mutex_mode} ({'기다림' if self.mutex_mode == 'wait' else '건너뜀'})")
             print("-" * 60)
 
         # 초기 population 생성 (feasible solution이 나올 때까지 반복)

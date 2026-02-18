@@ -51,7 +51,7 @@ FJSP에는 **mutex 제약이 없습니다**. RCMPSP에서 추가된 제약입니
 
 **환경 반영**:
 ```python
-# _update_available_actions() — 5개 가용성 제약 중 하나
+# _update_available_actions() — 가용성 제약 중 하나
 mutex_data = self.activity_mutex[batch_idxs]        # (B, N, max_mutex)
 mutex_partner_started = gather(started, mutex_ids)
 mutex_partner_ended = gather(ended, mutex_ids)
@@ -60,9 +60,9 @@ mutex_ok = ~mutex_running.any(dim=2)                # 하나라도 실행 중이
 ```
 
 **상태 반영**:
-- `schedulable` 마스크에 `mutex_ok` 포함 → `candidate` 선택 시 mutex 위반 activity 자동 제외
-- `dynamic_pair_mask`에 `~cand_mutex_ok` 포함 → mutex 파트너가 실행 중이면 해당 pair 마스킹
+- `dynamic_pair_mask`에 `~mutex_ok` 포함 (기본) → mutex 파트너 실행 중이면 해당 pair 마스킹
 - 모델은 마스킹된 action에 `-inf` 부여 → **mutex 위반 행동을 원천 차단**
+- **`allow_wait_mutex=True`** 옵션: mutex 조건을 pair mask에서 제거하여, 팀이 mutex 파트너 종료까지 대기 후 스케줄 가능
 
 ### 1.3 Release Time & Due Date (RCMPSP 고유)
 
@@ -81,9 +81,10 @@ tardiness = clamp(project_completion_time - project_due_date, min=0).sum()
 ```
 
 **상태 반영**:
-- `dynamic_pair_mask`: `~proj_released` 포함 → release 전 프로젝트의 pair 마스킹
+- `dynamic_pair_mask`: `~act_released` 포함 (기본) → release 전 activity의 pair 마스킹
+- **`allow_wait_release=True`** 옵션: release 조건을 pair mask에서 제거하여, 팀이 release time까지 대기 후 스케줄 가능
 - Pair Feature `p5`: **(due_date - 예상 완료시간) / max_time** — 납기 슬랙
-- Pair Feature `p7`: **(team_wait + release_wait) / max_time** — release 대기 포함 총 대기 시간
+- Pair Feature `p7`: **(team_wait + release_wait [+ mutex_wait]) / max_time** — 총 대기 시간
 
 ### 1.4 Project 개념 (FJSP의 Job과의 차이)
 
@@ -91,20 +92,18 @@ tardiness = clamp(project_completion_time - project_due_date, min=0).sum()
 |---|---|---|
 | **내부 구조** | 선형 체인 | 임의 DAG |
 | **시간 제약** | 없음 | release_time, due_date |
-| **candidate 의미** | "체인에서 다음 operation" | "DAG에서 모든 선행자 완료된 첫 schedulable activity" |
+| **candidate 의미** | "체인에서 다음 operation" | Identity mapping: 전체 activity (마스킹으로 제어) |
 | **목적함수** | Makespan only | Tardiness (프로젝트별 납기 초과) 또는 Makespan |
 
 **상태에 Project 정보를 반영하는 방법**:
 
-1. **Candidate 선택** (`_get_state_daniel()`):
+1. **Candidate = Activity Identity** (`_get_state_daniel()`):
    ```python
-   # 프로젝트 소속 마스크: 어느 activity가 어느 프로젝트에 속하는지
-   proj_membership = (activity_project.unsqueeze(1) == proj_range)  # (B, P, N)
-
-   # 프로젝트별 schedulable activity 중 첫 번째를 candidate로 선정
-   proj_schedulable = schedulable & proj_membership
-   candidate = masked_idx.min(dim=2)[0]  # (B, P) — 프로젝트당 1개
+   # Candidate = 전체 activity index (0..N-1). 마스킹은 dynamic_pair_mask에서 처리.
+   candidate = torch.arange(N).unsqueeze(0).expand(B, -1)  # (B, N)
    ```
+   RCMPSP는 DAG 기반이므로 프로젝트 내에 동시 schedulable activity가 여러 개 존재할 수 있음.
+   따라서 프로젝트별 1개가 아닌 **전체 activity**를 candidate로 사용하고, `dynamic_pair_mask`로 제어.
 
 2. **Activity Feature에 프로젝트 통계 포함**:
    - `f7`: 해당 activity가 속한 프로젝트의 **남은 activity 비율** (rem_count / tot_count)
@@ -113,13 +112,20 @@ tardiness = clamp(project_completion_time - project_due_date, min=0).sum()
 
 3. **Pair Feature에 프로젝트 납기 정보 포함**:
    - `p5`: 해당 프로젝트의 **납기 슬랙** (due_date - est_completion)
-   - `p6`: 해당 candidate의 작업량이 **프로젝트 남은 작업 대비 비율**
-   - `p7`: **release time 대기** 포함 총 대기 시간
+   - `p6`: 해당 activity의 작업량이 **프로젝트 남은 작업 대비 비율**
+   - `p7`: **release time 대기 [+ mutex 대기]** 포함 총 대기 시간
 
-4. **Action Space 구조** (P × T):
-   - DANIEL의 action은 `(project, team)` 조합
-   - 각 프로젝트의 candidate가 이미 정해져 있으므로, project를 선택하면 자동으로 activity가 결정
-   - 이는 FJSP의 `(job, machine)` 구조를 자연스럽게 계승하면서, 프로젝트 단위 의사결정을 가능하게 함
+4. **Action Space 구조** (N × T):
+   - DANIEL의 action은 `(activity, team)` 조합
+   - flat index에서 `activity_idx = action // N_T`, `team_idx = action % N_T`로 직접 분해
+   - FJSP의 `(job, machine)` 구조를 계승하되, 프로젝트 단위가 아닌 **activity 단위 의사결정**
+
+5. **Wait 옵션** (`allow_wait_release`, `allow_wait_mutex`):
+   - 기본(False): release time 미도래 또는 mutex 파트너 실행 중인 activity는 pair mask에서 제외
+   - True: 해당 제약을 pair mask에서 제거하여 "기다려서 스케줄" 허용. `_schedule_activity()`에서 delayed start 처리
+
+6. **Dominance Rule** (`dominance_rule`):
+   - Wait 옵션 활성화 시, 대기하는 pair 중 idle time 동안 다른 즉시 실행 가능한 activity를 할 수 있는 경우 해당 대기 pair를 제외
 
 ---
 
@@ -171,15 +177,15 @@ ppo_utils.py             # PPO 전용 유틸리티 (PPOMemory, eval_actions)
 forward() 입력:
   fea_j             (B, N, 10) — activity feature
   op_mask           (B, N, 3)  — activity attention mask
-  candidate         (B, P)     — 프로젝트별 후보 activity 인덱스
+  candidate         (B, N)     — activity identity (0..N-1)
   fea_m             (B, T, 8)  — team feature
   mch_mask          (B, T, T)  — team attention mask
-  comp_idx          (B, T, T, P) — 경쟁 인덱스 (team 간 경쟁 강도)
-  dynamic_pair_mask (B, P, T)  — 실행 불가 pair 마스크 (True=masked)
-  fea_pairs         (B, P, T, 8) — (activity, team) pair feature
+  comp_idx          (B, T, T, N) — 경쟁 인덱스 (team 간 경쟁 강도)
+  dynamic_pair_mask (B, N, T)  — 실행 불가 pair 마스크 (True=masked)
+  fea_pairs         (B, N, T, 8) — (activity, team) pair feature
 
 forward() 출력:
-  pi  (B, P*T) — 각 (project, team) 조합의 행동 확률 (softmax 후)
+  pi  (B, N*T) — 각 (activity, team) 조합의 행동 확률 (softmax 후)
   v   (B, 1)   — 현재 상태의 가치 추정
 ```
 
@@ -242,8 +248,8 @@ MLP(num_layers, input_dim, hidden_dim, output_dim)
 Actor(num_layers, input_dim, hidden_dim, output_dim)
   - tanh 활성화 함수
   - (activity, team) pair 스코어 계산에 사용
-  - input:  [B, P*T, 4*d + 8]  (candidate + team + global + pair feature)
-  - output: [B, P*T, 1]        (행동 로짓)
+  - input:  [B, N*T, 4*d + 8]  (candidate + team + global + pair feature)
+  - output: [B, N*T, 1]        (행동 로짓)
 
 Critic(num_layers, input_dim, hidden_dim, output_dim)
   - tanh 활성화 함수
@@ -261,7 +267,7 @@ Critic(num_layers, input_dim, hidden_dim, output_dim)
 ```
 eval_actions(pi, actions)
   - 주어진 행동에 대한 log probability와 entropy 계산
-  - 입력: pi [B, P*T] (softmax된 정책), actions [B] (행동 인덱스)
+  - 입력: pi [B, N*T] (softmax된 정책), actions [B] (행동 인덱스)
   - 출력: (log_probs [B], entropy scalar)
 
 PPOMemory(gamma, gae_lambda)
@@ -282,12 +288,12 @@ PPOMemory(gamma, gae_lambda)
 │
 ├─ fea_act    [B, N, 10]   Activity feature (10차원)
 ├─ act_mask   [B, N, 3]    Activity attention mask
-├─ candidate  [B, P]       프로젝트별 후보 activity 인덱스
+├─ candidate  [B, N]       activity identity (0..N-1)
 ├─ fea_team   [B, T, 8]    Team feature (8차원)
 ├─ team_mask  [B, T, T]    Team attention mask
-├─ comp_idx   [B, T, T, P] Team 간 경쟁 인덱스
-├─ pair_mask  [B, P, T]    실행 불가 pair 마스크
-└─ fea_pairs  [B, P, T, 8] Pair feature (8차원)
+├─ comp_idx   [B, T, T, N] Team 간 경쟁 인덱스
+├─ pair_mask  [B, N, T]    실행 불가 pair 마스크
+└─ fea_pairs  [B, N, T, 8] Pair feature (8차원)
 │
 ▼
 ┌──────────────────────────────────────────────────────┐
@@ -321,34 +327,34 @@ PPOMemory(gamma, gae_lambda)
 │                                                      │
 │  후보 activity 임베딩 수집:                          │
 │    Fea_j_JC = gather(fea_act_enc, candidate)         │
-│    shape: [B, P, d]                                  │
+│    shape: [B, N, d]                                  │
 │                                                      │
-│  P×T 직렬화 (모든 조합 나열):                        │
-│    Fea_j_JC_serial  [B, P*T, d]                      │
-│    Fea_m_serial     [B, P*T, d]                      │
-│    Fea_Gj_expand    [B, P*T, d]                      │
-│    Fea_Gm_expand    [B, P*T, d]                      │
-│    fea_pairs_flat   [B, P*T, 8]                      │
+│  N×T 직렬화 (모든 조합 나열):                        │
+│    Fea_j_JC_serial  [B, N*T, d]                      │
+│    Fea_m_serial     [B, N*T, d]                      │
+│    Fea_Gj_expand    [B, N*T, d]                      │
+│    Fea_Gm_expand    [B, N*T, d]                      │
+│    fea_pairs_flat   [B, N*T, 8]                      │
 │                                                      │
-│  concat → candidate_feature [B, P*T, 4d+8]          │
+│  concat → candidate_feature [B, N*T, 4d+8]          │
 └──────────────────────────────────────────────────────┘
 │                         │
 ▼                         ▼
 ┌─────────────┐     ┌─────────────┐
 │  Actor MLP  │     │ Critic MLP  │
-│ [B,P*T,4d+8]│     │  [B, 2d]   │
+│ [B,N*T,4d+8]│     │  [B, 2d]   │
 │      ↓      │     │      ↓     │
-│  [B, P*T]   │     │   [B, 1]   │
+│  [B, N*T]   │     │   [B, 1]   │
 │  (raw logit)│     │  (가치 v)  │
 └─────────────┘     └─────────────┘
 │
 ▼
 pair_mask로 마스킹 (-inf)
 ↓
-Softmax → π  [B, P*T]
+Softmax → π  [B, N*T]
 
 출력:
-  π  [B, P*T]  — 행동 확률 (프로젝트×팀 조합별)
+  π  [B, N*T]  — 행동 확률 (activity×team 조합별)
   v  [B, 1]    — 상태 가치
 ```
 
@@ -368,10 +374,10 @@ class EnvState:
     act_mask_tensor:        Tensor  # (B, N, 3)   — activity attention mask
     fea_team_tensor:        Tensor  # (B, T, 8)   — team features
     team_mask_tensor:       Tensor  # (B, T, T)   — team attention mask
-    dynamic_pair_mask_tensor: Tensor  # (B, P, T) — 불가능 pair 마스크
-    comp_idx_tensor:        Tensor  # (B, T, T, P) — team 경쟁 인덱스
-    candidate_tensor:       Tensor  # (B, P)       — 프로젝트별 후보 activity
-    fea_pairs_tensor:       Tensor  # (B, P, T, 8) — pair feature
+    dynamic_pair_mask_tensor: Tensor  # (B, N, T) — 불가능 pair 마스크
+    comp_idx_tensor:        Tensor  # (B, T, T, N) — team 경쟁 인덱스
+    candidate_tensor:       Tensor  # (B, N)       — activity identity (0..N-1)
+    fea_pairs_tensor:       Tensor  # (B, N, T, 8) — pair feature
 ```
 
 ### 5.2 Activity Feature (`fea_act`) — 10차원
@@ -397,7 +403,7 @@ class EnvState:
 
 ```
 인덱스  이름                    설명
-  0    avail_cand_ratio        현재 가용한 candidate 수 / P
+  0    avail_cand_ratio        현재 가용한 activity pair 수 / N
   1    compat_unstarted_ratio  eligible한 미시작 activity 수 / N
   2    min_elig_dur            eligible 미시작 activity 중 최소 duration / max_dur
   3    mean_elig_dur           eligible 미시작 activity 중 평균 duration / max_dur
@@ -412,63 +418,64 @@ class EnvState:
 ### 5.4 Pair Feature (`fea_pairs`) — 8차원
 
 ```
-(candidate activity, team) 조합별 피처
+(activity, team) 조합별 피처
 
 인덱스  이름                 설명
   0    norm_pt_global       processing_time / max_duration (전역 정규화)
-  1    norm_pt_per_cand     processing_time / 해당 candidate 최대 PT
+  1    norm_pt_per_act      processing_time / 해당 activity 최대 PT
   2    norm_pt_per_team     processing_time / 해당 team 최대 PT
   3    norm_pt_global_max   processing_time / 전체 최대 PT
   4    team_workload_ratio  processing_time / (team_remaining + PT) (팀 부하 비율)
   5    due_date_slack       (due_date - est_completion) / max_time  ★ RCMPSP 핵심
   6    proj_work_ratio      processing_time / 프로젝트 남은 작업량
-  7    total_wait_time      (team_wait + release_wait) / max_time  ★ Release time 반영
+  7    total_wait_time      (team_wait + release_wait [+ mutex_wait]) / max_time  ★ Wait 반영
 
-* 마스킹된 pair (eligible 아님, mutex 위반 등)는 0으로 설정
+* 마스킹된 pair는 0으로 설정
+* allow_wait_mutex=True일 때 p7에 mutex_wait 추가
 ```
 
-### 5.5 `dynamic_pair_mask` — 실행 불가 pair 마스크 (B, P, T)
+### 5.5 `dynamic_pair_mask` — 실행 불가 pair 마스크 (B, N, T)
 
-`True` = 마스킹 (실행 불가). 다음 6가지 조건 중 하나라도 해당하면 마스킹:
+`True` = 마스킹 (실행 불가). 기본 조건 + wait 옵션에 따라 조건 추가/제거:
 
 ```
-1. ~eligible:        팀이 해당 activity를 수행할 수 없음
-2. cand_started:     candidate activity가 이미 시작됨
-3. proj_done:        해당 프로젝트의 모든 activity가 완료됨
-4. ~team_avail_now:  팀이 아직 다른 작업 중 (available_time > current_time)
-5. ~proj_released:   프로젝트 release_time이 아직 안 됨  ★ RCMPSP 고유
-6. ~cand_mutex_ok:   candidate의 mutex 파트너가 실행 중  ★ RCMPSP 고유
+기본 마스킹 (항상 적용):
+1. ~valid_act:          패딩 activity
+2. activity_started:    이미 시작된 activity
+3. ~all_preds_done:     선행자 미완료
+4. ~eligible:           팀이 해당 activity를 수행할 수 없음
+
+조건부 마스킹:
+5. ~act_released:       release time 미도래  (allow_wait_release=False일 때만)
+6. ~mutex_ok:           mutex 파트너 실행 중  (allow_wait_mutex=False일 때만)
+
+Dominance rule (allow_wait + dominance_rule=True일 때):
+7. dominated:           대기 idle time 동안 다른 즉시 실행 가능 activity를 할 수 있는 pair
 ```
 
-### 5.6 `candidate` 텐서 — 프로젝트별 후보 activity 인덱스
+### 5.6 `candidate` 텐서 — Activity Identity Mapping
 
 ```python
-candidate: (B, P)
-# candidate[b, p] = 프로젝트 p에서 현재 실행 시작 가능한 activity 인덱스
-#   선정 조건 (5가지 모두 충족):
-#     1. 미시작 (unstarted)
-#     2. 모든 선행자 완료 (pred_ok)  ← DAG 기반
-#     3. Mutex 파트너 미실행 (mutex_ok)  ← RCMPSP 고유
-#     4. 가용 팀 존재 (has_avail_team)
-#     5. 프로젝트 released (release_time <= current_time)  ← RCMPSP 고유
-#   조건 충족 activity 중 인덱스가 가장 작은 것을 선택
-# 모든 activity가 완료된 프로젝트는 마지막 activity 인덱스 고정
+candidate: (B, N)
+# candidate = torch.arange(N).unsqueeze(0).expand(B, -1)
+# 전체 activity를 candidate로 사용. 필터링은 dynamic_pair_mask에서 처리.
+# 모델의 J 차원이 N으로 자동 적응 (sz_b, M, _, J = comp_idx.size())
 
-env.daniel_candidate  # trainer가 action 역변환에 사용
+env.daniel_candidate  # (B, N) — identity mapping이므로 action 역변환 시 직접 사용
+# action_flat → act_idx = action_flat // N_T, team_idx = action_flat % N_T
 ```
 
 ### 5.7 `comp_idx` — Team 간 경쟁 인덱스
 
 ```python
-comp_idx: (B, T, T, P)
-# comp_idx[b, k, q, p] = 1.0  ←  team k와 team q 모두
-#                              프로젝트 p의 candidate activity를
-#                              수행할 수 있을 때 (두 팀이 경쟁 관계)
-# comp_idx[b, k, q, p] = 0.0  ←  경쟁 없음
+comp_idx: (B, T, T, N)
+# comp_idx[b, k, q, n] = 1.0  ←  team k와 team q 모두
+#                              activity n을 수행할 수 있을 때 (두 팀이 경쟁 관계)
+# comp_idx[b, k, q, n] = 0.0  ←  경쟁 없음
 
 # 계산:
-avail_t  = avail_pair.permute(0, 2, 1).float()  # (B, T, P)
-comp_idx = avail_t.unsqueeze(2) * avail_t.unsqueeze(1)  # (B, T, T, P)
+avail_t  = avail_pair.permute(0, 2, 1).float()  # (B, T, N)
+comp_idx = avail_t.unsqueeze(2) * avail_t.unsqueeze(1)  # (B, T, T, N)
 ```
 
 ### 5.8 DANIEL 전용 step: `step_pair()`
@@ -602,21 +609,20 @@ while not done:
 
     # 3. π에서 action 샘플링
     dist = Categorical(pi)
-    action_flat = dist.sample()   # [B] — flat index (0 ~ P*T-1)
+    action_flat = dist.sample()   # [B] — flat index (0 ~ N*T-1)
     log_prob    = dist.log_prob(action_flat)
 
-    # 4. flat index → (project, team) → (activity, team)
-    proj_idx = action_flat // N_T      # 어느 프로젝트의 action인지
-    team_idx = action_flat % N_T       # 어느 팀인지
-    activity_idx = env.daniel_candidate[arange, proj_idx]  # 해당 프로젝트의 후보 activity
+    # 4. flat index → (activity, team) 직접 분해
+    act_idx  = action_flat // N_T  # 어느 activity인지
+    team_idx = action_flat % N_T   # 어느 팀인지
 
     # 5. 환경 step
-    s, obj_value, done = env.step_pair(activity_idx, team_idx)
+    s, obj_value, done = env.step_pair(act_idx, team_idx)
 ```
 
-> **핵심**: DANIEL의 action space는 `P × T` (프로젝트 수 × 팀 수) 구조입니다.
-> 각 프로젝트에서 현재 시작 가능한 activity 1개(candidate)와 팀 1개의 조합을 선택합니다.
-> GAT의 `(activity, team)` 직접 선택 방식과 달리, **프로젝트 단위 action** 입니다.
+> **핵심**: DANIEL의 action space는 `N × T` (activity 수 × 팀 수) 구조입니다.
+> 전체 activity 중 `dynamic_pair_mask`로 실행 가능한 `(activity, team)` 조합만 선택 가능합니다.
+> candidate가 identity mapping이므로 flat index에서 activity를 직접 분해합니다.
 
 ### 7.4 Validation 평가 (`_eval_validation`)
 
@@ -756,12 +762,13 @@ PPOMemory 저장 구조:
 |------|-------------------|------------------------------|
 | **상태 표현** | 이종 그래프 (PyG) | 분리된 텐서 (Activity, Team) |
 | **인코더** | Graph Attention Network | Dual Attention Network |
-| **Action Space** | `(activity, team)` 직접 열거 | `P × T` 프로젝트 단위 |
+| **Action Space** | `(activity, team)` 직접 열거 | `N × T` activity 단위 |
 | **가치 함수** | 없음 (REINFORCE only) | 내장 Critic (PPO 가능) |
-| **pair feature** | 없음 | (B, P, T, 8) pair feature 활용 |
+| **pair feature** | 없음 | (B, N, T, 8) pair feature 활용 |
 | **step 메서드** | `env.step(action)` | `env.step_pair(act, team)` |
 | **state 생성** | `_get_state_pyg()` | `_get_state_daniel()` |
-| **스케일** | Activity 수 증가 시 action space 가변 | P×T 고정 (스케일에 유리) |
+| **스케일** | Activity 수 증가 시 action space 가변 | N×T 고정 (스케일에 유리) |
+| **Wait 옵션** | 없음 | allow_wait_release, allow_wait_mutex |
 | **학습 알고리즘** | REINFORCE only | REINFORCE 또는 PPO |
 
 ---
@@ -773,12 +780,12 @@ State s_t (EnvState)
      │
      ▼
 DANIEL.forward(s_t)
-  ├─ π(a | s_t)  [B, P*T]   ← Actor: 행동 선택에 사용
+  ├─ π(a | s_t)  [B, N*T]   ← Actor: 행동 선택에 사용
   └─ v(s_t)      [B, 1]     ← Critic: PPO에서 advantage 계산에 사용
      │
      ▼
 Action 샘플링 (학습) 또는 argmax (테스트)
-  action_flat → proj_idx, team_idx → (activity, team)
+  action_flat → act_idx = action // N_T, team_idx = action % N_T
      │
      ▼
 env.step_pair(activity_idx, team_idx)

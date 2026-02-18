@@ -17,15 +17,15 @@ from data_generator import generate_scheduling_data_batch
 
 @dataclass
 class EnvState:
-    """DANIEL 모델용 상태 정의 (RCMPSP 환경)"""
+    """DANIEL 모델용 상태 정의 (RCMPSP 환경). Action space: (activity, team) 쌍."""
     fea_act_tensor: torch.Tensor = None       # (B, N, 10) activity features
     act_mask_tensor: torch.Tensor = None       # (B, N, 3)  attention mask
     fea_team_tensor: torch.Tensor = None       # (B, T, 8)  team features
     team_mask_tensor: torch.Tensor = None      # (B, T, T)  team attention mask
-    dynamic_pair_mask_tensor: torch.Tensor = None  # (B, P, T)  incompatible pair mask
-    comp_idx_tensor: torch.Tensor = None       # (B, T, T, P) competition index
-    candidate_tensor: torch.Tensor = None      # (B, P) candidate activity per project
-    fea_pairs_tensor: torch.Tensor = None      # (B, P, T, 8) pair features
+    dynamic_pair_mask_tensor: torch.Tensor = None  # (B, N, T)  incompatible pair mask
+    comp_idx_tensor: torch.Tensor = None       # (B, T, T, N) competition index
+    candidate_tensor: torch.Tensor = None      # (B, N) activity identity (0..N-1)
+    fea_pairs_tensor: torch.Tensor = None      # (B, N, T, 8) pair features
 
 
 class SchedulingEnv:
@@ -81,9 +81,23 @@ class SchedulingEnv:
         # 상태 출력 모드: 'pyg' (GNN 모델) 또는 'daniel' (DANIEL 모델)
         self.state_mode = env_params.get('state_mode', 'pyg')
 
+        # Wait 옵션: release time / mutex로 즉시 실행 불가해도 기다려서 스케줄 허용
+        self.allow_wait_release = env_params.get('allow_wait_release', False)
+        self.allow_wait_mutex = env_params.get('allow_wait_mutex', False)
+        # Dominance rule: 대기 중 idle time에 다른 activity를 할 수 있으면 해당 대기 pair 제외
+        self.dominance_rule = env_params.get('dominance_rule', False)
+
         # Step 진행 로그: 매 step마다 완료 activity 수 출력
         self.step_log = env_params.get('step_log', False)
-        
+
+        # Reward 방식: 'sparse' (에피소드 끝에만) 또는 'stepwise' (매 step마다 dense reward)
+        self.reward_type = env_params.get('reward_type', 'sparse')
+        if self.reward_type == 'stepwise' and self.objective != 'tardiness':
+            raise NotImplementedError(
+                "Step-wise reward is currently implemented for 'tardiness' objective only. "
+                "Makespan의 경우 FJSP 논문의 op_ct_lb 방식을 참고하세요."
+            )
+
         # 문제 데이터 (reset에서 초기화)
         self.problem = None
         self.max_N_A = None  # 최대 activity 수
@@ -180,7 +194,14 @@ class SchedulingEnv:
         # 초기 가능한 액션 업데이트
         # ========================================
         self._update_available_actions(self.BATCH_IDX)
-    
+
+        # ========================================
+        # Step-wise reward 초기화
+        # ========================================
+        if self.reward_type == 'stepwise':
+            self.estimated_tardiness = self._compute_estimated_tardiness()
+            self.step_reward = torch.zeros(self.batch_size, device=self.device)
+
     def _initialize_action_space(self):
         """
         각 배치별로 eligible한 (activity, team) 조합만 추출하여 action space 구성
@@ -425,7 +446,19 @@ class SchedulingEnv:
         mutex_ok = ~mutex_running.any(dim=2)  # (B, A)
         
         # Combine all conditions
-        self.available_actions[batch_idxs] = basic & pred_ok & mutex_ok
+        feasible = basic & pred_ok & mutex_ok
+
+        # Wait 옵션: release/mutex 제약을 완화하여 기다려서 스케줄 가능한 pair도 허용
+        if self.allow_wait_release or self.allow_wait_mutex:
+            # wait 가능한 pair: basic 조건에서 released와 team_ok 제거 + pred_ok
+            wait_base = valid & unstarted & pred_ok
+            if not self.allow_wait_release:
+                wait_base = wait_base & released
+            if not self.allow_wait_mutex:
+                wait_base = wait_base & mutex_ok
+            feasible = feasible | wait_base
+
+        self.available_actions[batch_idxs] = feasible
     
     def step(self, action):
         """
@@ -454,11 +487,21 @@ class SchedulingEnv:
 
         if self.step_log:
             self._env_step_count += 1
-            valid_mask = torch.arange(self.max_N_A, device=self.device).unsqueeze(0) < self.num_activities.unsqueeze(1)
-            valid_started = (self.activity_started & valid_mask).sum().item()
-            valid_ended = (self.activity_ended & valid_mask).sum().item()
-            total_valid = self.num_activities.sum().item()
-            print(f"  [Step {self._env_step_count}] Started: {int(valid_started)} / {int(total_valid)}, Ended: {int(valid_ended)} / {int(total_valid)}")
+            # 패딩 포함 max_N_A 기준: 모든 인스턴스가 동일한 카운트
+            per_inst_started = self.activity_started[0].sum().item()
+            per_inst_ended = self.activity_ended[0].sum().item()
+            total = self.max_N_A
+            print(f"  [Step {self._env_step_count}] Started: {int(per_inst_started)} / {total}, Ended: {int(per_inst_ended)} / {total} (per instance, B={self.batch_size})")
+
+        # Step-wise reward 계산
+        if self.reward_type == 'stepwise':
+            prev_est = self.estimated_tardiness
+            if all_done:
+                new_est = self._get_obj()  # Terminal: 실제 tardiness
+            else:
+                new_est = self._compute_estimated_tardiness()
+            self.step_reward = prev_est - new_est  # (B,) positive = improvement
+            self.estimated_tardiness = new_est
 
         if all_done:
             obj_value = self._get_obj()  # 목적함수값 반환 (양수)
@@ -487,11 +530,21 @@ class SchedulingEnv:
 
         if self.step_log:
             self._env_step_count += 1
-            valid_mask = torch.arange(self.max_N_A, device=self.device).unsqueeze(0) < self.num_activities.unsqueeze(1)
-            valid_started = (self.activity_started & valid_mask).sum().item()
-            valid_ended = (self.activity_ended & valid_mask).sum().item()
-            total_valid = self.num_activities.sum().item()
-            print(f"  [Step {self._env_step_count}] Started: {int(valid_started)} / {int(total_valid)}, Ended: {int(valid_ended)} / {int(total_valid)}")
+            # 패딩 포함 max_N_A 기준: 모든 인스턴스가 동일한 카운트
+            per_inst_started = self.activity_started[0].sum().item()
+            per_inst_ended = self.activity_ended[0].sum().item()
+            total = self.max_N_A
+            print(f"  [Step {self._env_step_count}] Started: {int(per_inst_started)} / {total}, Ended: {int(per_inst_ended)} / {total} (per instance, B={self.batch_size})")
+
+        # Step-wise reward 계산
+        if self.reward_type == 'stepwise':
+            prev_est = self.estimated_tardiness
+            if all_done:
+                new_est = self._get_obj()  # Terminal: 실제 tardiness
+            else:
+                new_est = self._compute_estimated_tardiness()
+            self.step_reward = prev_est - new_est  # (B,) positive = improvement
+            self.estimated_tardiness = new_est
 
         if all_done:
             obj_value = self._get_obj()
@@ -500,10 +553,29 @@ class SchedulingEnv:
             self.state = self._get_state()
             return self.state, None, False
 
+    def _get_mutex_clear_times(self):
+        """각 activity의 mutex 파트너 중 실행 중인 것의 최대 end_time 반환. (B, N)"""
+        B = self.batch_size
+        mutex_data = self.activity_mutex  # (B, N, max_mutex)
+        valid_mp = mutex_data >= 0
+        safe_mp = mutex_data.clamp(min=0)
+        mp_started = torch.gather(
+            self.activity_started, 1, safe_mp.reshape(B, -1)
+        ).reshape_as(safe_mp)
+        mp_ended = torch.gather(
+            self.activity_ended, 1, safe_mp.reshape(B, -1)
+        ).reshape_as(safe_mp)
+        mp_end_time = torch.gather(
+            self.activity_end_time, 1, safe_mp.reshape(B, -1)
+        ).reshape_as(safe_mp)
+        mp_running = mp_started & ~mp_ended & valid_mp
+        clear_times = torch.where(mp_running, mp_end_time, torch.zeros_like(mp_end_time))
+        return clear_times.max(dim=2)[0]  # (B, N)
+
     def _schedule_activity(self, batch_idxs, activity_ids, team_ids):
         """
-        Activity를 팀에 할당하고 시작
-        
+        Activity를 팀에 할당하고 시작 (wait 옵션 시 지연 시작 처리)
+
         Args:
             batch_idxs: (n_active,) - 처리할 배치 인덱스들
             activity_ids: (batch_size,) - 각 배치의 activity ID
@@ -511,28 +583,49 @@ class SchedulingEnv:
         """
         if len(batch_idxs) == 0:
             return
-        
-        # 시작 시간 = 현재 시뮬레이션 시간
-        # Feasible action에서 이미 모든 제약(선행작업, mutex, 팀 가용, 프로젝트 release)을 체크했으므로
-        # 선택된 activity는 즉시 시작 가능함이 보장됨
-        start_times = self.sim_time[batch_idxs]  # (n_active,)
-        
+
+        acts = activity_ids[batch_idxs]
+        teams = team_ids[batch_idxs]
+
+        # 시작 시간 = 현재 시뮬레이션 시간 (기본)
+        start_times = self.sim_time[batch_idxs].clone()  # (n_active,)
+
+        # 팀 가용 시간까지 대기 (항상 적용)
+        team_avail = self.team_available_time[batch_idxs, teams]
+        start_times = torch.max(start_times, team_avail)
+
+        # Release time 대기 (allow_wait_release=True일 때만 실제로 지연 발생 가능)
+        if self.allow_wait_release:
+            proj_ids = self.activity_project[batch_idxs, acts]
+            release = self.project_release_time[batch_idxs, proj_ids]
+            start_times = torch.max(start_times, release)
+
+        # Mutex 파트너 종료 대기 (allow_wait_mutex=True일 때만 실제로 지연 발생 가능)
+        if self.allow_wait_mutex:
+            mutex_partners = self.activity_mutex[batch_idxs, acts]  # (n_active, max_mutex)
+            valid_mp = mutex_partners >= 0
+            safe_mp = mutex_partners.clamp(min=0)
+            mp_started = torch.gather(self.activity_started[batch_idxs], 1, safe_mp)
+            mp_ended = torch.gather(self.activity_ended[batch_idxs], 1, safe_mp)
+            mp_end_time = torch.gather(self.activity_end_time[batch_idxs], 1, safe_mp)
+            mp_running = mp_started & ~mp_ended & valid_mp
+            mutex_clear = torch.where(mp_running, mp_end_time, torch.zeros_like(mp_end_time)).max(dim=1)[0]
+            start_times = torch.max(start_times, mutex_clear)
+
         # 종료 시간 계산
-        end_times = start_times + self.activity_duration[batch_idxs, activity_ids[batch_idxs]]  # (n_active,)
-        
-        # Duration 추출
-        durations = self.activity_duration[batch_idxs, activity_ids[batch_idxs]]  # (n_active,)
-        
+        end_times = start_times + self.activity_duration[batch_idxs, acts]  # (n_active,)
+
         # Activity 상태 업데이트
-        self.activity_started[batch_idxs, activity_ids[batch_idxs]] = True
-        self.activity_start_time[batch_idxs, activity_ids[batch_idxs]] = start_times
-        self.activity_end_time[batch_idxs, activity_ids[batch_idxs]] = end_times
-        self.activity_remaining_time[batch_idxs, activity_ids[batch_idxs]] = durations  # 남은 시간 설정
-        self.activity_assigned_team[batch_idxs, activity_ids[batch_idxs]] = team_ids[batch_idxs]
-        
+        self.activity_started[batch_idxs, acts] = True
+        self.activity_start_time[batch_idxs, acts] = start_times
+        self.activity_end_time[batch_idxs, acts] = end_times
+        # remaining_time = end_time - sim_time (지연 시작 시 duration보다 클 수 있음)
+        self.activity_remaining_time[batch_idxs, acts] = end_times - self.sim_time[batch_idxs]
+        self.activity_assigned_team[batch_idxs, acts] = teams
+
         # 팀 상태 업데이트
-        self.team_available_time[batch_idxs, team_ids[batch_idxs]] = end_times
-        self.team_current_activity[batch_idxs, team_ids[batch_idxs]] = activity_ids[batch_idxs] 
+        self.team_available_time[batch_idxs, teams] = end_times
+        self.team_current_activity[batch_idxs, teams] = acts 
 
     def move_next_state(self, batch_idxs):
         """
@@ -545,7 +638,7 @@ class SchedulingEnv:
         Returns:
             bool: all_done - 모든 배치의 activity가 완료되었는지 여부
         """
-        max_iterations = 1000  # 무한 루프 방지
+        max_iterations = 10000  # 무한 루프 방지
         iterations = 0
         
         # 루프 시작 전 초기 액션 업데이트
@@ -693,6 +786,79 @@ class SchedulingEnv:
         # 프로젝트 완료 상태 업데이트 (벡터 연산)
         self.project_completed[batch_idxs] = proj_all_completed
         
+    def _compute_estimated_tardiness(self):
+        """
+        Tardiness의 하한값(lower bound) 추정 (step-wise reward용)
+
+        DANIEL 논문 (FJSP)의 op_ct_lb를 RCMPSP tardiness에 적응:
+        - Scheduled activity: 실제 end_time 사용
+        - Unscheduled activity: release_time + 선행자 완료 LB + duration (낙관적 추정)
+        - Mutex, 팀 경합은 무시 (lower bound이므로)
+
+        Iterative relaxation으로 DAG 선행 관계를 처리 (최대 N_A_max회 반복)
+
+        Returns:
+            estimated_tardiness: (batch_size,) - 추정 총 tardiness
+        """
+        B, N = self.batch_size, self.max_N_A
+
+        # Valid activity mask (패딩 제외)
+        valid = torch.arange(N, device=self.device).unsqueeze(0) < self.num_activities.unsqueeze(1)  # (B, N)
+
+        # Release time per activity
+        proj_ids = self.activity_project.clamp(min=0)
+        release = torch.gather(self.project_release_time, 1, proj_ids)  # (B, N)
+
+        # Initialize completion LB
+        # Scheduled: actual end_time, Unscheduled: release + duration (낙관적)
+        completion_lb = torch.where(
+            self.activity_started,
+            self.activity_end_time,
+            release + self.activity_duration
+        )
+        completion_lb = torch.where(valid, completion_lb, torch.zeros_like(completion_lb))
+
+        # Predecessor data
+        preds = self.activity_predecessors  # (B, N, max_preds)
+        valid_pred = preds >= 0
+        safe_preds = preds.clamp(min=0)
+
+        # Iterative relaxation (N_A_max iterations = 프로젝트 내 최대 체인 길이)
+        for _ in range(self.N_A_max):
+            pred_comp = torch.gather(
+                completion_lb, 1, safe_preds.reshape(B, -1)
+            ).reshape(B, N, preds.shape[2])
+            pred_comp = torch.where(valid_pred, pred_comp, torch.zeros_like(pred_comp))
+            max_pred_comp = pred_comp.max(dim=2)[0]  # (B, N)
+
+            new_start = torch.max(release, max_pred_comp)
+            new_comp = torch.where(
+                self.activity_started,
+                self.activity_end_time,
+                new_start + self.activity_duration
+            )
+            new_comp = torch.where(valid, new_comp, torch.zeros_like(new_comp))
+
+            if torch.equal(new_comp, completion_lb):
+                break
+            completion_lb = new_comp
+
+        # Per-project estimated completion time (_get_obj 패턴 재사용)
+        proj_range = torch.arange(self.N_P, device=self.device)
+        proj_mask = (self.activity_project.unsqueeze(1) == proj_range.view(1, -1, 1)) & valid.unsqueeze(1)  # (B, N_P, N)
+
+        comp_3d = completion_lb.unsqueeze(1).expand(-1, self.N_P, -1)  # (B, N_P, N)
+        masked = torch.where(proj_mask, comp_3d, torch.tensor(-float('inf'), device=self.device))
+        proj_completion = masked.max(dim=2)[0]  # (B, N_P)
+        proj_completion = torch.where(
+            torch.isinf(proj_completion),
+            torch.zeros_like(proj_completion),
+            proj_completion
+        )
+
+        # Total estimated tardiness
+        return torch.clamp(proj_completion - self.project_due_date, min=0.0).sum(dim=1)  # (B,)
+
     def _get_obj(self):
         """
         목적함수값 계산 (에피소드 끝에 한번만 호출)
@@ -856,17 +1022,19 @@ class SchedulingEnv:
     def _get_state_daniel(self):
         """
         현재 상태를 DANIEL 모델 입력 형태로 반환 (완전 벡터화)
-        
+
+        Action space: (activity, team) 쌍. Candidate = 전체 N개 activity (마스킹으로 제어)
+
         RCMPSP에 맞게 적응된 피처:
             fea_act: (B, N, 10) - activity feature vectors
             act_mask: (B, N, 3) - predecessor/successor attention mask
             fea_team: (B, T, 8) - team feature vectors
             team_mask: (B, T, T) - team attention mask
-            comp_idx: (B, T, T, P) - competition index
-            dynamic_pair_mask: (B, P, T) - incompatible pair mask
-            candidate: (B, P) - candidate activity per project
-            fea_pairs: (B, P, T, 8) - pair features
-        
+            comp_idx: (B, T, T, N) - competition index
+            dynamic_pair_mask: (B, N, T) - incompatible pair mask
+            candidate: (B, N) - activity identity (0..N-1)
+            fea_pairs: (B, N, T, 8) - pair features
+
         Returns:
             EnvState 객체
         """
@@ -929,12 +1097,9 @@ class SchedulingEnv:
         proj_range = torch.arange(P, device=device).view(1, -1, 1)
         proj_membership = (self.activity_project.unsqueeze(1) == proj_range)  # (B, P, N)
 
-        # Candidate: 프로젝트별 첫 번째 schedulable activity
-        proj_schedulable = schedulable.unsqueeze(1) & proj_membership  # (B, P, N)
-        act_idx_exp = act_indices.unsqueeze(1).expand(-1, P, -1)  # (1, P, N)
-        masked_idx = torch.where(proj_schedulable, act_idx_exp.expand(B, -1, -1), N)
-        candidate = masked_idx.min(dim=2)[0].clamp(max=N - 1)  # (B, P)
-        self.daniel_candidate = candidate  # trainer에서 사용
+        # Candidate = activity identity (0..N-1). 마스킹은 dynamic_pair_mask에서 처리.
+        candidate = torch.arange(N, device=device).unsqueeze(0).expand(B, -1)  # (B, N)
+        self.daniel_candidate = candidate
         
         # ========================================
         # 2. 프로젝트 통계 (피처 구성에 사용)
@@ -994,8 +1159,9 @@ class SchedulingEnv:
         act_mask = torch.zeros(B, N, 3, device=device)
         
         # 프로젝트별 first/last activity
-        proj_first = torch.where(proj_valid, act_idx_exp.expand(B, -1, -1), N).min(dim=2)[0]  # (B, P)
-        proj_last = torch.where(proj_valid, act_idx_exp.expand(B, -1, -1), -1).max(dim=2)[0]  # (B, P)
+        act_idx_proj = act_indices.unsqueeze(1).expand(B, P, N)  # (B, P, N)
+        proj_first = torch.where(proj_valid, act_idx_proj, N).min(dim=2)[0]  # (B, P)
+        proj_last = torch.where(proj_valid, act_idx_proj, -1).max(dim=2)[0]  # (B, P)
         
         b_idx_flat = torch.arange(B, device=device).unsqueeze(1).expand(-1, P).reshape(-1)
         
@@ -1008,52 +1174,64 @@ class SchedulingEnv:
         act_mask[~valid_act] = 1.0  # 패딩 activity는 전부 mask
         
         # ========================================
-        # 5. Candidate 기반 pair 정보
+        # 5. dynamic_pair_mask (B, N, T) — True=masked
         # ========================================
-        cand_safe = candidate.clamp(max=N - 1)  # (B, P)
-        
-        # candidate별 eligible teams: (B, P, T)
-        cand_exp_t = cand_safe.unsqueeze(2).expand(-1, -1, T)  # (B, P, T)
-        elig_for_cand = torch.gather(self.activity_eligible_teams, 1, cand_exp_t)  # (B, P, T)
-        
-        # candidate started / project done
-        cand_started = torch.gather(self.activity_started, 1, cand_safe)  # (B, P)
-        proj_done = proj_rem_count <= 0  # (B, P)
-        
-        # team_avail_now: 위 schedulable 계산에서 이미 정의됨
-
-        # project released
-        cand_proj_id = torch.gather(self.activity_project, 1, cand_safe)  # (B, P)
-        cand_proj_id = cand_proj_id.clamp(min=0, max=self.N_P - 1)  # padding activity의 -1 방지
-        proj_release = torch.gather(self.project_release_time, 1, cand_proj_id)  # (B, P)
-        proj_released = proj_release <= current_time.unsqueeze(1)  # (B, P)
-        
-        # ========================================
-        # 6. dynamic_pair_mask (B, P, T) — True=masked
-        # ========================================
-        # Mutex check for candidates
-        cand_mutex_ok = torch.gather(mutex_ok, 1, cand_safe)  # (B, P)
-
+        # 기본 마스킹: 패딩, 이미 시작됨, 선행자 미완료, eligibility 없음, 팀 비가용
         dynamic_pair_mask = (
-            ~elig_for_cand
-            | cand_started.unsqueeze(2)
-            | proj_done.unsqueeze(2)
-            | ~team_avail_now.unsqueeze(1)
-            | ~proj_released.unsqueeze(2)
-            | ~cand_mutex_ok.unsqueeze(2)   # mutex 파트너 실행 중이면 mask
-        )
-        
+            ~valid_act.unsqueeze(2)                    # 패딩 activity
+            | self.activity_started.unsqueeze(2)       # 이미 시작됨
+            | (~all_preds_done).unsqueeze(2)           # 선행자 미완료
+            | ~self.activity_eligible_teams            # 팀 eligibility 없음
+            | ~team_avail_now.unsqueeze(1)             # 팀 비가용 (busy)
+        )  # (B, N, T)
+
+        # Wait 옵션에 따라 release/mutex 조건 on/off
+        if not self.allow_wait_release:
+            dynamic_pair_mask = dynamic_pair_mask | ~act_released.unsqueeze(2)
+        if not self.allow_wait_mutex:
+            dynamic_pair_mask = dynamic_pair_mask | (~mutex_ok).unsqueeze(2)
+
+        # Dominance rule: 대기 pair 중 idle time에 다른 즉시 실행 가능 activity가 있으면 제외
+        if (self.allow_wait_release or self.allow_wait_mutex) and self.dominance_rule:
+            imm_schedulable = ready & mutex_ok & act_released  # (B, N)
+            imm_elig = imm_schedulable.unsqueeze(2) & self.activity_eligible_teams  # (B, N, T)
+            imm_dur = torch.where(imm_elig, self.activity_duration.unsqueeze(2).expand(-1, -1, T),
+                                  torch.full((B, N, T), float('inf'), device=device))
+            min_imm_dur = imm_dur.min(dim=1)[0]  # (B, T)
+
+            # 각 (activity, team) pair의 예상 시작 시간
+            est_start = torch.max(
+                current_time.unsqueeze(1).unsqueeze(2).expand(-1, N, T),
+                self.team_available_time.unsqueeze(1).expand(-1, N, -1)
+            )
+            if self.allow_wait_release:
+                act_release_t = torch.gather(self.project_release_time, 1, act_proj_safe)  # (B, N)
+                est_start = torch.max(est_start, act_release_t.unsqueeze(2).expand(-1, -1, T))
+            if self.allow_wait_mutex:
+                mutex_end_all = self._get_mutex_clear_times()  # (B, N)
+                est_start = torch.max(est_start, mutex_end_all.unsqueeze(2).expand(-1, -1, T))
+
+            effective_avail = torch.max(
+                current_time.unsqueeze(1).unsqueeze(2).expand(-1, N, T),
+                self.team_available_time.unsqueeze(1).expand(-1, N, -1)
+            )
+            idle_time = (est_start - effective_avail).clamp(min=0)  # (B, N, T)
+
+            needs_wait = idle_time > 0
+            dominated = needs_wait & (min_imm_dur.unsqueeze(1).expand(-1, N, -1) <= idle_time)
+            dynamic_pair_mask = dynamic_pair_mask | dominated
+
         # available pairs (inverse of mask)
-        avail_pair = ~dynamic_pair_mask  # (B, P, T)
-        
+        avail_pair = ~dynamic_pair_mask  # (B, N, T)
+
         # ========================================
-        # 7. comp_idx (B, T, T, P) — competition index
+        # 6. comp_idx (B, T, T, N) — competition index
         # ========================================
-        avail_t = avail_pair.permute(0, 2, 1).float()  # (B, T, P)
-        comp_idx = (avail_t.unsqueeze(2) * avail_t.unsqueeze(1))  # (B, T, T, P)
-        
+        avail_t = avail_pair.permute(0, 2, 1).float()  # (B, T, N)
+        comp_idx = (avail_t.unsqueeze(2) * avail_t.unsqueeze(1))  # (B, T, T, N)
+
         # ========================================
-        # 8. team_mask (B, T, T) — team attention mask
+        # 7. team_mask (B, T, T) — team attention mask
         # ========================================
         team_mask = (comp_idx.sum(dim=3) > 0).float()  # (B, T, T)
         diag = torch.arange(T, device=device)
@@ -1062,7 +1240,7 @@ class SchedulingEnv:
         # ========================================
         # 9. fea_team (B, T, 8)
         # ========================================
-        t0 = avail_pair.sum(dim=1).float() / max(1, P)  # available candidate count
+        t0 = avail_pair.sum(dim=1).float() / max(1, N)  # available activity count per team
         
         unstarted_elig = self.activity_eligible_teams & (~self.activity_started & valid_act).unsqueeze(2)
         t1 = unstarted_elig.sum(dim=1).float() / max(1, N)  # compatible unstarted count
@@ -1089,46 +1267,57 @@ class SchedulingEnv:
         fea_team = (fea_team - mean_team) / std_team
         
         # ========================================
-        # 10. fea_pairs (B, P, T, 8) — pair features
+        # 9. fea_pairs (B, N, T, 8) — pair features (activity-team)
         # ========================================
-        cand_dur = torch.gather(self.activity_duration, 1, cand_safe)  # (B, P)
-        cand_pt = cand_dur.unsqueeze(2) * elig_for_cand.float()  # (B, P, T)
-        
-        max_cand_pt = cand_pt.max(dim=2, keepdim=True)[0].clamp(min=1e-8)
-        team_max_pt = cand_pt.max(dim=1, keepdim=True)[0].clamp(min=1e-8)
-        global_max_pt = cand_pt.max().clamp(min=1e-8)
-        
-        p0 = cand_pt / max_dur
-        p1 = cand_pt / max_cand_pt
-        p2 = cand_pt / team_max_pt
-        p3 = cand_pt / global_max_pt
-        
+        # act_dur: (B, N) — 직접 activity duration 사용 (candidate gather 불필요)
+        act_dur = self.activity_duration  # (B, N)
+        eligible = self.activity_eligible_teams  # (B, N, T)
+        act_pt = act_dur.unsqueeze(2) * eligible.float()  # (B, N, T)
+
+        max_act_pt = act_pt.max(dim=2, keepdim=True)[0].clamp(min=1e-8)
+        team_max_pt = act_pt.max(dim=1, keepdim=True)[0].clamp(min=1e-8)
+        global_max_pt = act_pt.max().clamp(min=1e-8)
+
+        p0 = act_pt / max_dur
+        p1 = act_pt / max_act_pt
+        p2 = act_pt / team_max_pt
+        p3 = act_pt / global_max_pt
+
         # team remaining work ratio
         team_rem = torch.clamp(self.team_available_time - current_time.unsqueeze(1), min=0)  # (B, T)
-        p4 = cand_pt / (team_rem.unsqueeze(1) + cand_pt + 1e-8)
-        
+        p4 = act_pt / (team_rem.unsqueeze(1) + act_pt + 1e-8)
+
         # estimated completion time ratio
-        est_start = torch.max(
-            current_time.unsqueeze(1).unsqueeze(2).expand(-1, P, T),
-            self.team_available_time.unsqueeze(1).expand(-1, P, -1)
+        est_start_p = torch.max(
+            current_time.unsqueeze(1).unsqueeze(2).expand(-1, N, T),
+            self.team_available_time.unsqueeze(1).expand(-1, N, -1)
         )
-        est_comp = est_start + cand_pt
-        proj_due = torch.gather(self.project_due_date, 1, cand_proj_id)  # (B, P)
-        p5 = (proj_due.unsqueeze(2) - est_comp) / max(1.0, max_time_val)  # slack
-        
-        # project remaining work ratio
-        proj_rem_exp = proj_rem_work.unsqueeze(2).expand(-1, -1, T).clamp(min=1e-8)
-        p6 = cand_pt / proj_rem_exp
-        
+        est_comp = est_start_p + act_pt
+        # 프로젝트 due date per activity
+        act_proj_id = act_proj_safe.clamp(min=0, max=self.N_P - 1)  # (B, N)
+        act_due = torch.gather(self.project_due_date, 1, act_proj_id)  # (B, N)
+        p5 = (act_due.unsqueeze(2) - est_comp) / max(1.0, max_time_val)  # slack
+
+        # project remaining work ratio per activity
+        act_proj_rem = torch.gather(proj_rem_work, 1, act_proj_id).unsqueeze(2).expand(-1, -1, T).clamp(min=1e-8)
+        p6 = act_pt / act_proj_rem
+
         # pair wait time
         team_wait = torch.clamp(
             self.team_available_time.unsqueeze(1) - current_time.unsqueeze(1).unsqueeze(2), min=0
         )
+        act_release_time = torch.gather(self.project_release_time, 1, act_proj_id)  # (B, N)
         release_wait = torch.clamp(
-            proj_release.unsqueeze(2) - current_time.unsqueeze(1).unsqueeze(2), min=0
+            act_release_time.unsqueeze(2) - current_time.unsqueeze(1).unsqueeze(2), min=0
         )
         p7 = (team_wait + release_wait) / max(1.0, max_time_val)
-        
+
+        # mutex wait time (allow_wait_mutex=True일 때 추가)
+        if self.allow_wait_mutex:
+            mutex_clear = self._get_mutex_clear_times()  # (B, N)
+            mutex_wait = torch.clamp(mutex_clear.unsqueeze(2) - current_time.unsqueeze(1).unsqueeze(2), min=0)
+            p7 = (team_wait + release_wait + mutex_wait) / max(1.0, max_time_val)
+
         fea_pairs = torch.stack([p0, p1, p2, p3, p4, p5, p6, p7], dim=3)
         fea_pairs[dynamic_pair_mask] = 0
         

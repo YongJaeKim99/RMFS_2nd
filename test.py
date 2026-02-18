@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 2-1) 학습 알고리즘 설정 (체크포인트와 일치해야 함)
     # -----------------------------
-    ALGORITHM_TYPE = 'reinforce'  # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'ppo'  # 'reinforce' or 'ppo'
     # ※ 학습 시 사용한 ALGORITHM_TYPE과 동일하게 설정하세요.
     #   추론(inference) 자체는 두 알고리즘 모두 동일하게 동작합니다.
 
@@ -73,6 +73,10 @@ if __name__ == "__main__":
     GA_DECODE_MODE = "immediate"  # "batch" or "immediate"
     GA_CROSSOVER_RATE = 0.8  # Uniform Crossover 적용 확률
     GA_MUTATION_RATE = 0.2   # Mutation 적용 확률 (페어의 10%에 새 random key 할당)
+    #GA_RELEASE_MODE = "wait"   # "wait": release time까지 기다림, "skip": 아직이면 건너뜀
+    GA_RELEASE_MODE = "wait"
+    #GA_MUTEX_MODE = "wait"     # "wait": mutex 끝날 때까지 기다림, "skip": 진행 중이면 건너뜀
+    GA_MUTEX_MODE = "wait"
     GA_VERBOSE = False  # True: 세대별 진행상황 출력, False: 최종 결과만
     
     # -----------------------------
@@ -101,10 +105,16 @@ if __name__ == "__main__":
     # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
     TEST_FILE_START = 0
     TEST_FILE_END = 49
+    GA_REPEATS = 30  # GA를 인스턴스당 반복 실행 횟수 (best objective 채택)
     
     # -----------------------------
     # 3) 기타 설정
     # -----------------------------
+    # Wait / Dominance 옵션
+    ALLOW_WAIT_RELEASE = False
+    ALLOW_WAIT_MUTEX = False
+    DOMINANCE_RULE = False
+
     # 디버그 모드 설정
     DEBUG_ENV = False
     DEBUG_MODEL = False
@@ -135,6 +145,9 @@ if __name__ == "__main__":
         print(f"     - Population: {GA_POPULATION_SIZE}")
         print(f"     - Generations: {GA_GENERATIONS}")
         print(f"     - Decode Mode: {GA_DECODE_MODE}")
+        print(f"     - Release Mode: {GA_RELEASE_MODE}")
+        print(f"     - Mutex Mode: {GA_MUTEX_MODE}")
+        print(f"     - Repeats/Instance: {GA_REPEATS}")
     print(f"  📌 SAVE_GANTT_CHART: {SAVE_GANTT_CHART}")
     if SAVE_GANTT_CHART:
         print(f"     - Show in Browser: {SHOW_GANTT_CHART}")
@@ -161,6 +174,9 @@ if __name__ == "__main__":
         'objective': OBJECTIVE,
         'debug_env': DEBUG_ENV,
         'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
+        'allow_wait_release': ALLOW_WAIT_RELEASE,
+        'allow_wait_mutex': ALLOW_WAIT_MUTEX,
+        'dominance_rule': DOMINANCE_RULE,
     }
 
     # 모델 파라미터 설정 (MODEL_TYPE에 따라 분기)
@@ -253,6 +269,9 @@ if __name__ == "__main__":
             exp_rows.append({'Item': 'Population Size', 'Value': GA_POPULATION_SIZE})
             exp_rows.append({'Item': 'Generations', 'Value': GA_GENERATIONS})
             exp_rows.append({'Item': 'Decode Mode', 'Value': GA_DECODE_MODE})
+            exp_rows.append({'Item': 'Release Mode', 'Value': GA_RELEASE_MODE})
+            exp_rows.append({'Item': 'Mutex Mode', 'Value': GA_MUTEX_MODE})
+            exp_rows.append({'Item': 'Repeats/Instance', 'Value': GA_REPEATS})
         exp_rows.append({'Item': 'Device', 'Value': 'CPU'})
         exp_rows.append({'Item': 'Test Files', 'Value': f'{TEST_FILE_START} to {TEST_FILE_END}'})
         if SEED is not None:
@@ -422,24 +441,36 @@ if __name__ == "__main__":
                 try:
                     # pickle 데이터를 GA 형식으로 변환
                     projects = convert_problem_to_ga_format(problem, batch_idx, env_params['N_T'])
-                    
-                    # GA 실행
-                    ga = GeneticAlgorithm(
-                        projects=projects,
-                        num_teams=env_params['N_T'],
-                        population_size=GA_POPULATION_SIZE,
-                        generations=GA_GENERATIONS,
-                        crossover_rate=GA_CROSSOVER_RATE,
-                        mutation_rate=GA_MUTATION_RATE,
-                        decode_mode=GA_DECODE_MODE,
-                        verbose=GA_VERBOSE
-                    )
-                    best_solution = ga.evolve()
-                    objective_value = best_solution.objective
-                    
+
+                    # GA 반복 실행 (best objective 채택)
+                    best_solution = None
+                    best_ga = None
+                    objective_value = float('inf')
+
+                    for rep in range(GA_REPEATS):
+                        ga = GeneticAlgorithm(
+                            projects=projects,
+                            num_teams=env_params['N_T'],
+                            population_size=GA_POPULATION_SIZE,
+                            generations=GA_GENERATIONS,
+                            crossover_rate=GA_CROSSOVER_RATE,
+                            mutation_rate=GA_MUTATION_RATE,
+                            decode_mode=GA_DECODE_MODE,
+                            release_mode=GA_RELEASE_MODE,
+                            mutex_mode=GA_MUTEX_MODE,
+                            verbose=GA_VERBOSE
+                        )
+                        sol = ga.evolve()
+                        if sol.objective < objective_value:
+                            objective_value = sol.objective
+                            best_solution = sol
+                            best_ga = ga
+
+                    ga = best_ga  # 간트차트 등에서 사용
+
                     end_time = time.time()
                     runtime = end_time - start_time
-                    
+
                     result = {
                         'algorithm': 'GA',
                         'instance': i,
@@ -447,8 +478,9 @@ if __name__ == "__main__":
                         'runtime': runtime
                     }
                     ga_results.append(result)
-                    
-                    print(f"   [GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s")
+
+                    rep_str = f" (best of {GA_REPEATS})" if GA_REPEATS > 1 else ""
+                    print(f"   [GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s{rep_str}")
                     
                     # 간트차트 및 선후관계 그래프 생성
                     if SAVE_GANTT_CHART:
@@ -596,19 +628,14 @@ if __name__ == "__main__":
                                     fea_act, act_mask, candidate, fea_team,
                                     team_mask, comp_idx, dynamic_pair_mask, fea_pairs
                                 )
-                                # Greedy: argmax
+                                # Greedy: argmax → (activity, team)
                                 action_flat = torch.argmax(pi, dim=1)
                                 N_T = test_env.N_T
-                                proj_idx = action_flat // N_T
+                                act_idx  = action_flat // N_T
                                 team_idx = action_flat % N_T
 
-                                cand = test_env.daniel_candidate
-                                activity_idx = cand[
-                                    torch.arange(1, device=test_env.device),
-                                    proj_idx.to(test_env.device)
-                                ]
                                 s, obj_value, done = test_env.step_pair(
-                                    activity_idx,
+                                    act_idx.to(test_env.device),
                                     team_idx.to(test_env.device)
                                 )
                         else:

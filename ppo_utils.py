@@ -13,7 +13,7 @@ def eval_actions(pi, actions):
     Compute log probability and entropy for given actions.
     Equivalent to FJSP common_utils.eval_actions().
 
-    :param pi: policy probability distribution [sz_b, J*M] (already softmaxed)
+    :param pi: policy probability distribution [sz_b, N*T] (already softmaxed)
     :param actions: action indices [sz_b]
     :return: (log_probs [sz_b], entropy scalar)
     """
@@ -31,7 +31,7 @@ class PPOMemory:
     (action, log_prob, value, reward, done) for a full episode.
 
     After the rollout, transpose_data() flattens everything to
-    [B*P*T, ...] for mini-batch PPO updates, and get_gae_advantages()
+    [B*N*T, ...] for mini-batch PPO updates, and get_gae_advantages()
     computes GAE advantages + value targets.
     """
 
@@ -43,15 +43,15 @@ class PPOMemory:
         self.gamma = gamma
         self.gae_lambda = gae_lambda
 
-        # State tensors (one per step, shape [B*P, ...])
-        self.fea_act_seq = []           # [T, tensor[B*P, N, 10]]
-        self.act_mask_seq = []          # [T, tensor[B*P, N, 3]]
-        self.fea_team_seq = []          # [T, tensor[B*P, T_teams, 8]]
-        self.team_mask_seq = []         # [T, tensor[B*P, T_teams, T_teams]]
-        self.dynamic_pair_mask_seq = [] # [T, tensor[B*P, P, T_teams]]
-        self.comp_idx_seq = []          # [T, tensor[B*P, T_teams, T_teams, P]]
-        self.candidate_seq = []         # [T, tensor[B*P, P]]
-        self.fea_pairs_seq = []         # [T, tensor[B*P, P, T_teams, 8]]
+        # State tensors (one per step, shape [B, ...])
+        self.fea_act_seq = []           # [T_steps, tensor[B, N, 10]]
+        self.act_mask_seq = []          # [T_steps, tensor[B, N, 3]]
+        self.fea_team_seq = []          # [T_steps, tensor[B, T_teams, 8]]
+        self.team_mask_seq = []         # [T_steps, tensor[B, T_teams, T_teams]]
+        self.dynamic_pair_mask_seq = [] # [T_steps, tensor[B, N, T_teams]]
+        self.comp_idx_seq = []          # [T_steps, tensor[B, T_teams, T_teams, N]]
+        self.candidate_seq = []         # [T_steps, tensor[B, N]]
+        self.fea_pairs_seq = []         # [T_steps, tensor[B, N, T_teams, 8]]
 
         # Transition data (one per step)
         self.action_seq = []   # [T, tensor[B*P]]
@@ -82,11 +82,11 @@ class PPOMemory:
         """
         Append transition data for the current step.
 
-        :param action:   sampled action index  [B*P]
-        :param log_prob: log π(a|s)            [B*P]
-        :param val:      critic value V(s)     [B*P]
-        :param reward:   step reward           [B*P]
-        :param done:     done flag             [B*P] bool tensor
+        :param action:   sampled action index  [B]
+        :param log_prob: log π(a|s)            [B]
+        :param val:      critic value V(s)     [B]
+        :param reward:   step reward           [B]
+        :param done:     done flag             [B] bool tensor
         """
         self.action_seq.append(action)
         self.log_probs.append(log_prob)
@@ -100,22 +100,22 @@ class PPOMemory:
 
     def transpose_data(self):
         """
-        Stack and flatten trajectory to [B*P*T, ...] format.
+        Stack and flatten trajectory to [B*T_steps, ...] format.
 
         Layout of returned tuple (index → content):
-          0  fea_act      [B*P*T, N, 10]
-          1  act_mask     [B*P*T, N, 3]
-          2  fea_team     [B*P*T, T_teams, 8]
-          3  team_mask    [B*P*T, T_teams, T_teams]
-          4  dyn_pair_msk [B*P*T, P, T_teams]
-          5  comp_idx     [B*P*T, T_teams, T_teams, P]
-          6  candidate    [B*P*T, P]
-          7  fea_pairs    [B*P*T, P, T_teams, 8]
-          8  action       [B*P*T]
-          9  reward       [B*P*T]
-         10  val          [B*P*T]
-         11  done         [B*P*T]
-         12  log_probs    [B*P*T]
+          0  fea_act      [B*T_steps, N, 10]
+          1  act_mask     [B*T_steps, N, 3]
+          2  fea_team     [B*T_steps, T_teams, 8]
+          3  team_mask    [B*T_steps, T_teams, T_teams]
+          4  dyn_pair_msk [B*T_steps, N, T_teams]
+          5  comp_idx     [B*T_steps, T_teams, T_teams, N]
+          6  candidate    [B*T_steps, N]
+          7  fea_pairs    [B*T_steps, N, T_teams, 8]
+          8  action       [B*T_steps]
+          9  reward       [B*T_steps]
+         10  val          [B*T_steps]
+         11  done         [B*T_steps]
+         12  log_probs    [B*T_steps]
         """
         def _stack_flat(seq):
             # [T, B*P, ...] → [B*P, T, ...] → [B*P*T, ...]
@@ -154,8 +154,8 @@ class PPOMemory:
         Must be called AFTER transpose_data() (which sets t_old_val_seq).
 
         Returns:
-            advantages: [B*P*T]  — normalized per env-instance
-            v_targets:  [B*P*T]  — value regression targets
+            advantages: [B*T_steps]  — normalized per env-instance
+            v_targets:  [B*T_steps]  — value regression targets
         """
         # reward_arr: [T, B*P],  values: [T, B*P]
         reward_arr = torch.stack(self.reward_seq, dim=0)          # [T, B*P]

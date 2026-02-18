@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'reinforce'   # 'reinforce' or 'ppo'
     # 'reinforce': REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
     # 'ppo':       PPO-Clip + GAE (DANIEL 전용, 논문 알고리즘)
 
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     # 알고리즘별 기본 하이퍼파라미터 (논문 값 기준)
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
-        EPOCHS                = 1000       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 512       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        EPOCHS                = 200       # 논문: max_updates = 1,000
+        BATCH_SIZE            = 64       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
@@ -43,11 +43,11 @@ if __name__ == "__main__":
         BASELINE_TYPE       = 'none'       # PPO는 value function이 baseline
         NORMALIZE_ADVANTAGE = False        # GAE 내부에서 정규화
     else:  # 'reinforce'
-        EPOCHS                = 100        # ← 동작 확인용 (원래: 200)
-        BATCH_SIZE            = 16
+        EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
+        BATCH_SIZE            = 8
         POMO_SIZE             = 8
-        VALIDATION_INTERVAL   = 1          # ← 매 epoch 확인 (원래: 5)
-        VALIDATION_BATCH_SIZE = 3          # ← 동작 확인용 (원래: 50)
+        VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
+        VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-5, 'weight_decay': 1e-6}}
         USE_ENTROPY_REG     = False
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
 
     # Wandb 옵션
-    USE_WANDB = False    # ← 동작 확인용 (원래: True)
+    USE_WANDB = True    # ← 동작 확인용 (원래: True)
     WANDB_PROJECT = "RCMPSP"
     WANDB_RUN_NAME = None
     WANDB_RUN_ID = None
@@ -88,13 +88,23 @@ if __name__ == "__main__":
     # Validation 사용 여부
     USE_VALIDATION = True
 
+    # Wait / Dominance 옵션 (DANIEL action space)
+    ALLOW_WAIT_RELEASE = False   # True: release time 미도래 activity도 대기 후 스케줄 허용
+    ALLOW_WAIT_MUTEX = False     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
+    DOMINANCE_RULE = False       # True: 대기 pair의 dominance 필터링
+
+    # Reward 방식 선택
+    #REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
+                            # 'stepwise': 매 step마다 dense reward (DANIEL 논문 방식, tardiness 전용)
+    REWARD_TYPE = 'sparse'  # 'sparse': episode 끝에만 reward (기본)
+
     # 디버그 옵션
     DEBUG_ENV = False
     DEBUG_MODEL = False
     STEP_PROGRESS_LOG = False  # True: 매 step마다 "Ended: X / Y" 출력
 
     # 로깅 상세도 옵션
-    VERBOSE_LOGGING = True  # True: 각 batch/POMO별 목적함수와 started/ended 출력
+    VERBOSE_LOGGING = False  # True: 각 batch/POMO별 목적함수와 started/ended 출력
                               # False: accumulation마다 평균값만, epoch 끝날 때만 출력
 
     # =================================================================
@@ -157,6 +167,10 @@ if __name__ == "__main__":
          'debug_env': DEBUG_ENV,
          'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
          'step_log': STEP_PROGRESS_LOG,
+         'allow_wait_release': ALLOW_WAIT_RELEASE,
+         'allow_wait_mutex': ALLOW_WAIT_MUTEX,
+         'dominance_rule': DOMINANCE_RULE,
+         'reward_type': REWARD_TYPE,
     }
     '''
     # 큰 사이즈
@@ -220,7 +234,7 @@ if __name__ == "__main__":
     # 트레이너 파라미터 설정
     trainer_params = {
         'epochs': EPOCHS,
-        'accumulation_steps': 4,
+        'accumulation_steps': 8,
         'grad_clip_norm': 1.0,
         'entropy_coef': ENTROPY_COEF if USE_ENTROPY_REG else 0.0,
         'baseline_type': BASELINE_TYPE,
@@ -258,6 +272,7 @@ if __name__ == "__main__":
         'tau': PPO_TAU,
         'ppo_minibatch_size': PPO_MINIBATCH_SIZE,
         'n_resample': N_RESAMPLE,
+        'reward_type': REWARD_TYPE,
     }
 
     # 트레이너 생성
@@ -297,7 +312,11 @@ if __name__ == "__main__":
     print(f"  └─ 동시 불가 확률: {env_params['mutex_prob']}")
     print(f"  └─ Due Date Tightness: {env_params['due_date_tightness']}")
 
-    print(f"\nEntropy Regularization: {'ON' if USE_ENTROPY_REG else 'OFF'}")
+    print(f"\nReward Type: {REWARD_TYPE}")
+    if REWARD_TYPE == 'stepwise':
+        print(f"  └─ Dense reward: r_t = est_tardiness(s_t) - est_tardiness(s_t+1)")
+
+    print(f"Entropy Regularization: {'ON' if USE_ENTROPY_REG else 'OFF'}")
     if USE_ENTROPY_REG:
         print(f"  └─ Entropy Coef: {ENTROPY_COEF}")
 

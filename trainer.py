@@ -89,7 +89,10 @@ class Scheduling_Trainer:
         
         # 목적함수 설정
         self.objective = env_params.get('objective', 'tardiness')
-        
+
+        # Reward 방식 설정
+        self.reward_type = trainer_params.get('reward_type', 'sparse')
+
         # Device 설정
         device_str = trainer_params.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device(device_str)
@@ -227,6 +230,7 @@ class Scheduling_Trainer:
                 "learning_rate": learning_rate,
                 "normalize_advantage": normalize_advantage,
                 "entropy_coef": self.trainer_params.get('entropy_coef', 0.0),
+                "reward_type": self.reward_type,
             }
             # 모델별 파라미터 추가
             if self.model_type == 'daniel':
@@ -576,26 +580,26 @@ class Scheduling_Trainer:
                 # Store state before stepping
                 memory.push_state(s)
 
-                # Step environment
+                # Step environment: flat action → (activity, team)
                 N_T      = env.N_T
-                proj_idx = action_flat // N_T
-                team_idx = action_flat % N_T
-                cand     = env.daniel_candidate  # [B*P, P]
-                activity_idx = cand[
-                    torch.arange(batch_total, device=env.device),
-                    proj_idx.to(env.device)
-                ]
+                act_idx  = action_flat // N_T   # (B,) — 직접 activity index
+                team_idx = action_flat % N_T    # (B,) — team index
 
                 s, obj_value, done = env.step_pair(
-                    activity_idx,
+                    act_idx.to(env.device),
                     team_idx.to(env.device)
                 )
 
-                # Reward: sparse — 0 at intermediate steps, -objective at terminal
-                if done:
-                    reward = -obj_value.to(self.device)
+                # Reward 계산
+                if self.reward_type == 'stepwise':
+                    # Dense reward: r_t = est_tardiness(s_t) - est_tardiness(s_{t+1})
+                    reward = env.step_reward.to(self.device)
                 else:
-                    reward = torch.zeros(batch_total, device=self.device)
+                    # Sparse reward: 0 at intermediate steps, -objective at terminal
+                    if done:
+                        reward = -obj_value.to(self.device)
+                    else:
+                        reward = torch.zeros(batch_total, device=self.device)
 
                 done_tensor = torch.full((batch_total,), done, dtype=torch.bool, device=self.device)
 
@@ -743,6 +747,7 @@ class Scheduling_Trainer:
         
         # Shaped reward 및 entropy 누적용
         cumulative_reward = torch.zeros(batch_total)
+        cumulative_step_reward = torch.zeros(batch_total, device=self.device)
         if use_entropy:
             cumulative_entropy = torch.zeros(batch_total).to(self.device)
 
@@ -779,18 +784,14 @@ class Scheduling_Trainer:
                 if use_entropy:
                     cumulative_entropy += entropy
                 
-                # Action 변환: flat index → (project, team) → (activity, team)
+                # Action 변환: flat index → (activity, team)
                 N_T = env.N_T
-                proj_idx = action_flat // N_T  # (B,)
+                act_idx  = action_flat // N_T  # (B,) — 직접 activity index
                 team_idx = action_flat % N_T   # (B,)
-                
-                # candidate에서 activity 가져오기 (환경 device에서)
-                cand = env.daniel_candidate  # (B, P) — 환경 device에 있음
-                activity_idx = cand[torch.arange(batch_total, device=env.device), proj_idx.to(env.device)]
-                
+
                 # 환경 step (activity, team 쌍으로 직접)
                 s, obj_value, done = env.step_pair(
-                    activity_idx,
+                    act_idx.to(env.device),
                     team_idx.to(env.device)
                 )
             else:
@@ -808,8 +809,16 @@ class Scheduling_Trainer:
                 else:
                     s, obj_value, done = env.step(action.to('cpu'))
 
-        # 목적함수값을 reward로 변환 (음수로)
-        reward = -obj_value  # reward = -목적함수 (최소화 문제를 최대화 문제로)
+            # Step-wise reward 누적 (REINFORCE: 에피소드 전체 합을 최종 reward로 사용)
+            if self.reward_type == 'stepwise':
+                cumulative_step_reward += env.step_reward.to(self.device)
+
+        # 목적함수값을 reward로 변환
+        if self.reward_type == 'stepwise':
+            # Dense reward 합산: init_est - final_tardiness (positive = better)
+            reward = cumulative_step_reward
+        else:
+            reward = -obj_value  # reward = -목적함수 (최소화 문제를 최대화 문제로)
         
         # POMO 체크: -1 또는 1이면 POMO 사용 안함
         use_pomo = self.env_params['pomo_size'] > 1
@@ -1301,17 +1310,11 @@ class Scheduling_Trainer:
                     action_flat = torch.argmax(pi, dim=1)
 
                     N_T = val_env.N_T
-                    proj_idx = action_flat // N_T
+                    act_idx  = action_flat // N_T
                     team_idx = action_flat % N_T
 
-                    cand = val_env.daniel_candidate
-                    activity_idx = cand[
-                        torch.arange(batch_total, device=val_env.device),
-                        proj_idx.to(val_env.device)
-                    ]
-
                     s, obj_value, done = val_env.step_pair(
-                        activity_idx,
+                        act_idx.to(val_env.device),
                         team_idx.to(val_env.device)
                     )
                 else:
