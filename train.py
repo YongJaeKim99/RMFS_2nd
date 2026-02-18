@@ -162,6 +162,7 @@ if __name__ == "__main__":
          'precedence_prob': 0.3,  # 선행 관계 생성 확률
          'mutex_prob': 0.03,  # 동시 불가 생성 확률
          'max_preds': 5,   # activity당 최대 선행 작업 수 (tensor 패딩 크기)
+         'max_succs': 5,   # activity당 최대 후행 작업 수 (tensor 패딩 크기)
          'max_mutex': 2,  # activity당 최대 동시 불가 작업 수 (tensor 패딩 크기)
          'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
          'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
@@ -188,6 +189,7 @@ if __name__ == "__main__":
         'precedence_prob': 0.3,  # 선행 관계 생성 확률
         'mutex_prob': 0.1,  # 동시 불가 생성 확률
         'max_preds': 5,   # activity당 최대 선행 작업 수
+        'max_succs': 5,   # activity당 최대 후행 작업 수
         'max_mutex': 10,  # activity당 최대 동시 불가 작업 수
         'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
         'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)

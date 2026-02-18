@@ -21,38 +21,71 @@ class SingleOpAttnBlock(nn.Module):
         nn.init.xavier_uniform_(self.W.data, gain=1.414)
         self.a = nn.Parameter(torch.empty(size=(2 * output_dim, 1)))
         nn.init.xavier_uniform_(self.a.data, gain=1.414)
+        # inner attention용 파라미터: e_{i,k} = LeakyReLU(a_inner^T [Wh_i || Wh_k])
+        self.a_inner = nn.Parameter(torch.empty(size=(2 * output_dim, 1)))
+        nn.init.xavier_uniform_(self.a_inner.data, gain=1.414)
 
         self.leaky_relu = nn.LeakyReLU(self.alpha)
 
         self.dropout = nn.Dropout(p=dropout_prob)
 
-    def forward(self, h, op_mask):
+    def forward(self, h, op_mask, pred_idx, succ_idx):
         """
+        DAG-based 2-level GAT attention.
+
         :param h: operation feature vectors with shape [sz_b, N, input_dim]
-        :param op_mask: used for masking nonexistent predecessors/successor
+        :param op_mask: used for masking zero pred/succ aggregations
                         with shape [sz_b, N, 3]
+        :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
+        :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
         :return: output feature vectors with shape [sz_b, N, output_dim]
         """
-        Wh = torch.matmul(h, self.W)
-        sz_b, N, _ = Wh.size()
+        Wh = torch.matmul(h, self.W)  # (B, N, D)
+        B, N, D = Wh.shape
 
-        Wh_concat = torch.stack([Wh.roll(1, dims=1), Wh, Wh.roll(-1, dims=1)], dim=-2)
+        def inner_attend(neighbor_idx):
+            """선행자/후행자 집합에 대한 inner attention → (B, N, D)"""
+            max_k = neighbor_idx.shape[2]
+            valid = neighbor_idx >= 0                          # (B, N, max_k)
+            safe  = neighbor_idx.clamp(min=0)                  # (B, N, max_k)
 
-        Wh1 = torch.matmul(Wh, self.a[:self.out_features, :])
-        Wh2 = torch.matmul(Wh, self.a[self.out_features:, :])
+            # gather neighbor embeddings: (B, N*max_k, D) → (B, N, max_k, D)
+            nbr_emb = torch.gather(
+                Wh, 1,
+                safe.reshape(B, -1).unsqueeze(-1).expand(-1, -1, D)
+            ).reshape(B, N, max_k, D)
 
-        Wh2_concat = torch.stack([Wh2.roll(1, dims=1), Wh2, Wh2.roll(-1, dims=1)], dim=-1)
+            # inner attention: e_{i,k} = LeakyReLU(a_inner^T [Wh_i || Wh_k])
+            q = torch.matmul(Wh,     self.a_inner[:D, :])   # (B, N, 1)
+            k = torch.matmul(nbr_emb, self.a_inner[D:, :])  # (B, N, max_k, 1)
+            e = self.leaky_relu(q.unsqueeze(2) + k)          # (B, N, max_k, 1)
+            e = e.masked_fill(~valid.unsqueeze(-1), -9e15)
 
-        # broadcast add: [sz_b, N, 1, 1] + [sz_b, N, 1, 3]
-        e = Wh1.unsqueeze(-1) + Wh2_concat
-        e = self.leaky_relu(e)
+            alpha = F.softmax(e, dim=2)                       # (B, N, max_k, 1)
+            agg   = (alpha * nbr_emb).sum(dim=2)             # (B, N, D)
 
-        zero_vec = -9e15 * torch.ones_like(e)
-        attention = torch.where(op_mask.unsqueeze(-2) > 0, zero_vec, e)
+            # 유효 이웃이 없으면 zero vector (op_mask로 outer에서 마스킹)
+            agg = agg * valid.any(dim=2, keepdim=True).float()
+            return agg
 
+        pred_agg = inner_attend(pred_idx)   # (B, N, D)
+        succ_agg = inner_attend(succ_idx)   # (B, N, D)
+
+        # outer attention: {pred_agg, Wh_self, succ_agg} 3-slot
+        Wh_concat = torch.stack([pred_agg, Wh, succ_agg], dim=-2)    # (B, N, 3, D)
+
+        Wh1      = torch.matmul(Wh,       self.a[:D, :])              # (B, N, 1)
+        Wh2_pred = torch.matmul(pred_agg, self.a[D:, :])              # (B, N, 1)
+        Wh2_self = torch.matmul(Wh,       self.a[D:, :])              # (B, N, 1)
+        Wh2_succ = torch.matmul(succ_agg, self.a[D:, :])              # (B, N, 1)
+        Wh2_concat = torch.stack([Wh2_pred, Wh2_self, Wh2_succ], dim=-1)  # (B, N, 1, 3)
+
+        e_outer  = self.leaky_relu(Wh1.unsqueeze(-1) + Wh2_concat)   # (B, N, 1, 3)
+        zero_vec = -9e15 * torch.ones_like(e_outer)
+        attention = torch.where(op_mask.unsqueeze(-2) > 0, zero_vec, e_outer)
         attention = F.softmax(attention, dim=-1)
         attention = self.dropout(attention)
-        h_new = torch.matmul(attention, Wh_concat).squeeze(-2)
+        h_new = torch.matmul(attention, Wh_concat).squeeze(-2)        # (B, N, D)
 
         return h_new
 
@@ -79,11 +112,13 @@ class MultiHeadOpAttnBlock(nn.Module):
         for i, attention in enumerate(self.attentions):
             self.add_module('attention_{}'.format(i), attention)
 
-    def forward(self, h, op_mask):
+    def forward(self, h, op_mask, pred_idx, succ_idx):
         """
         :param h: operation feature vectors with shape [sz_b, N, input_dim]
         :param op_mask: used for masking nonexistent predecessors/successor
                         (with shape [sz_b, N, 3])
+        :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
+        :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
         :return: output feature vectors with shape
                 [sz_b, N, num_heads * output_dim] (if concat == true)
                 or [sz_b, N, output_dim]
@@ -91,7 +126,7 @@ class MultiHeadOpAttnBlock(nn.Module):
         h = self.dropout(h)
 
         # shape: [ [sz_b, N, output_dim], ... [sz_b, N, output_dim]]
-        h_heads = [att(h, op_mask) for att in self.attentions]
+        h_heads = [att(h, op_mask, pred_idx, succ_idx) for att in self.attentions]
 
         if self.concat:
             h = torch.cat(h_heads, dim=-1)

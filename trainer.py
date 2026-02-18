@@ -565,11 +565,14 @@ class Scheduling_Trainer:
                 comp_idx  = s.comp_idx_tensor.to(self.device)
                 dyn_pmask = s.dynamic_pair_mask_tensor.to(self.device)
                 fea_pairs = s.fea_pairs_tensor.to(self.device)
+                pred_idx  = s.pred_idx_tensor.to(self.device)
+                succ_idx  = s.succ_idx_tensor.to(self.device)
 
                 # Forward pass → (pi, v)
                 pi, v = self.model(
                     fea_act, act_mask, candidate, fea_team,
-                    team_mask, comp_idx, dyn_pmask, fea_pairs
+                    team_mask, comp_idx, dyn_pmask, fea_pairs,
+                    pred_idx, succ_idx
                 )
 
                 # Sample action
@@ -653,10 +656,12 @@ class Scheduling_Trainer:
                     t_data[5][start:end],   # comp_idx
                     t_data[4][start:end],   # dynamic_pair_mask
                     t_data[7][start:end],   # fea_pairs
+                    t_data[8][start:end],   # pred_idx
+                    t_data[9][start:end],   # succ_idx
                 )
 
-                actions_batch   = t_data[8][start:end]   # action
-                old_logprobs    = t_data[12][start:end]  # stored log_probs
+                actions_batch   = t_data[10][start:end]  # action (shifted by 2)
+                old_logprobs    = t_data[14][start:end]  # stored log_probs (shifted by 2)
                 adv_batch       = t_advantage[start:end]
                 v_target_batch  = v_target[start:end]
 
@@ -767,11 +772,14 @@ class Scheduling_Trainer:
                 comp_idx = s.comp_idx_tensor.to(self.device)
                 dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
                 fea_pairs = s.fea_pairs_tensor.to(self.device)
-                
+                pred_idx = s.pred_idx_tensor.to(self.device)
+                succ_idx = s.succ_idx_tensor.to(self.device)
+
                 # DANIEL forward: (pi, v)
                 pi, v = self.model(
                     fea_act, act_mask, candidate, fea_team,
-                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                    pred_idx, succ_idx
                 )
                 
                 # Action 샘플링
@@ -1300,10 +1308,13 @@ class Scheduling_Trainer:
                     comp_idx = s.comp_idx_tensor.to(self.device)
                     dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
                     fea_pairs = s.fea_pairs_tensor.to(self.device)
+                    pred_idx = s.pred_idx_tensor.to(self.device)
+                    succ_idx = s.succ_idx_tensor.to(self.device)
 
                     pi, v = self.model(
                         fea_act, act_mask, candidate, fea_team,
-                        team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                        team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                        pred_idx, succ_idx
                     )
 
                     # Greedy: argmax

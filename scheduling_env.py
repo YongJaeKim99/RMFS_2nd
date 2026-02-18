@@ -26,6 +26,8 @@ class EnvState:
     comp_idx_tensor: torch.Tensor = None       # (B, T, T, N) competition index
     candidate_tensor: torch.Tensor = None      # (B, N) activity identity (0..N-1)
     fea_pairs_tensor: torch.Tensor = None      # (B, N, T, 8) pair features
+    pred_idx_tensor: torch.Tensor = None       # (B, N, max_preds) predecessor indices (-1 padded)
+    succ_idx_tensor: torch.Tensor = None       # (B, N, max_succs) successor indices (-1 padded)
 
 
 class SchedulingEnv:
@@ -133,6 +135,7 @@ class SchedulingEnv:
         self.activity_project = self.problem['activity_project'].to(self.device)  # (batch_size, max_N_A)
         self.activity_eligible_teams = self.problem['activity_eligible_teams'].to(self.device)  # (batch_size, max_N_A, N_T)
         self.activity_predecessors = self.problem['activity_predecessors'].to(self.device)  # (batch_size, max_N_A, max_preds)
+        self.activity_successors = self.problem['activity_successors'].to(self.device)   # (batch_size, max_N_A, max_succs)
         self.activity_mutex = self.problem['activity_mutex'].to(self.device)  # (batch_size, max_N_A, max_mutex)
         
         # Dynamic (device에서 생성)
@@ -1155,23 +1158,20 @@ class SchedulingEnv:
         # ========================================
         # 4. act_mask (B, N, 3) — attention neighbor mask
         # ========================================
-        # 0=predecessor, 1=self, 2=successor in linear order
+        # slot 0: mask=1 → skip pred_agg  (DAG source: no predecessors)
+        # slot 1: self (항상 attend)
+        # slot 2: mask=1 → skip succ_agg  (DAG sink: no successors)
         # mask=1 means DON'T attend (FJSP convention)
+
+        # 실제 DAG 구조 기반: 선행자/후행자 존재 여부
+        has_pred = (self.activity_predecessors >= 0).any(dim=2)  # (B, N)
+        has_succ = (self.activity_successors >= 0).any(dim=2)    # (B, N)
+
         act_mask = torch.zeros(B, N, 3, device=device)
-        
-        # 프로젝트별 first/last activity
-        act_idx_proj = act_indices.unsqueeze(1).expand(B, P, N)  # (B, P, N)
-        proj_first = torch.where(proj_valid, act_idx_proj, N).min(dim=2)[0]  # (B, P)
-        proj_last = torch.where(proj_valid, act_idx_proj, -1).max(dim=2)[0]  # (B, P)
-        
-        b_idx_flat = torch.arange(B, device=device).unsqueeze(1).expand(-1, P).reshape(-1)
-        
-        vf = (proj_first < N).reshape(-1)
-        act_mask[b_idx_flat[vf], proj_first.reshape(-1)[vf].clamp(max=N - 1), 0] = 1.0
-        
-        vl = (proj_last >= 0).reshape(-1)
-        act_mask[b_idx_flat[vl], proj_last.reshape(-1)[vl].clamp(min=0), 2] = 1.0
-        
+        # DAG source (선행자 없음): pred_agg는 0-벡터이므로 outer attention에서 제외
+        act_mask[:, :, 0] = (~has_pred & valid_act).float()
+        # DAG sink (후행자 없음): succ_agg는 0-벡터이므로 outer attention에서 제외
+        act_mask[:, :, 2] = (~has_succ & valid_act).float()
         act_mask[~valid_act] = 1.0  # 패딩 activity는 전부 mask
         
         # ========================================
@@ -1333,5 +1333,7 @@ class SchedulingEnv:
             comp_idx_tensor=comp_idx,
             candidate_tensor=candidate,
             fea_pairs_tensor=fea_pairs,
+            pred_idx_tensor=self.activity_predecessors,  # (B, N, max_preds)
+            succ_idx_tensor=self.activity_successors,    # (B, N, max_succs)
         )
         return state

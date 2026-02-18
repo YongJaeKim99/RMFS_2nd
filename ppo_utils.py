@@ -52,6 +52,8 @@ class PPOMemory:
         self.comp_idx_seq = []          # [T_steps, tensor[B, T_teams, T_teams, N]]
         self.candidate_seq = []         # [T_steps, tensor[B, N]]
         self.fea_pairs_seq = []         # [T_steps, tensor[B, N, T_teams, 8]]
+        self.pred_idx_seq = []          # [T_steps, tensor[B, N, max_preds]]
+        self.succ_idx_seq = []          # [T_steps, tensor[B, N, max_succs]]
 
         # Transition data (one per step)
         self.action_seq = []   # [T, tensor[B*P]]
@@ -77,6 +79,8 @@ class PPOMemory:
         self.comp_idx_seq.append(state.comp_idx_tensor)
         self.candidate_seq.append(state.candidate_tensor)
         self.fea_pairs_seq.append(state.fea_pairs_tensor)
+        self.pred_idx_seq.append(state.pred_idx_tensor)
+        self.succ_idx_seq.append(state.succ_idx_tensor)
 
     def push_transition(self, action, log_prob, val, reward, done):
         """
@@ -111,11 +115,13 @@ class PPOMemory:
           5  comp_idx     [B*T_steps, T_teams, T_teams, N]
           6  candidate    [B*T_steps, N]
           7  fea_pairs    [B*T_steps, N, T_teams, 8]
-          8  action       [B*T_steps]
-          9  reward       [B*T_steps]
-         10  val          [B*T_steps]
-         11  done         [B*T_steps]
-         12  log_probs    [B*T_steps]
+          8  pred_idx     [B*T_steps, N, max_preds]
+          9  succ_idx     [B*T_steps, N, max_succs]
+         10  action       [B*T_steps]
+         11  reward       [B*T_steps]
+         12  val          [B*T_steps]
+         13  done         [B*T_steps]
+         14  log_probs    [B*T_steps]
         """
         def _stack_flat(seq):
             # [T, B*P, ...] → [B*P, T, ...] → [B*P*T, ...]
@@ -129,6 +135,8 @@ class PPOMemory:
         t_comp_idx     = _stack_flat(self.comp_idx_seq)
         t_candidate    = _stack_flat(self.candidate_seq)
         t_fea_pairs    = _stack_flat(self.fea_pairs_seq)
+        t_pred_idx     = _stack_flat(self.pred_idx_seq)
+        t_succ_idx     = _stack_flat(self.succ_idx_seq)
         t_action       = _stack_flat(self.action_seq)
         t_reward       = _stack_flat(self.reward_seq)
 
@@ -141,6 +149,7 @@ class PPOMemory:
 
         return (t_fea_act, t_act_mask, t_fea_team, t_team_mask,
                 t_dyn_pmask, t_comp_idx, t_candidate, t_fea_pairs,
+                t_pred_idx, t_succ_idx,
                 t_action, t_reward, t_val, t_done, t_logprobs)
 
     # ------------------------------------------------------------------
@@ -202,6 +211,8 @@ class PPOMemory:
         del self.comp_idx_seq[:]
         del self.candidate_seq[:]
         del self.fea_pairs_seq[:]
+        del self.pred_idx_seq[:]
+        del self.succ_idx_seq[:]
         del self.action_seq[:]
         del self.reward_seq[:]
         del self.val_seq[:]

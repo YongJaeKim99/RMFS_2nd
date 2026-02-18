@@ -159,6 +159,8 @@ def generate_scheduling_data_batch(env_params):
     activity_predecessors = torch.full((batch_size, max_activities, max_preds), -1, dtype=torch.long)
     max_mutex = env_params.get('max_mutex', 10)  # 최대 동시 불가 작업 수
     activity_mutex = torch.full((batch_size, max_activities, max_mutex), -1, dtype=torch.long)
+    max_succs = env_params.get('max_succs', 5)   # 최대 후행 작업 수
+    activity_successors = torch.full((batch_size, max_activities, max_succs), -1, dtype=torch.long)
     
     # 프로젝트 정보
     project_release_time = torch.zeros(batch_size, N_P, dtype=torch.float)
@@ -171,7 +173,13 @@ def generate_scheduling_data_batch(env_params):
         projects = batch_projects[b]
         activities = batch_activities_list[b]
         num_activities_per_batch[b] = len(activities)
-        
+
+        # 후행자 맵 구성 (predecessor → successor 역방향)
+        successors_map = {act.id: [] for act in activities}
+        for act in activities:
+            for pred_id in act.predecessors:
+                successors_map[pred_id].append(act.id)
+
         # Activity 데이터 채우기
         for a_idx, act in enumerate(activities):
             activity_duration[b, a_idx] = act.duration
@@ -189,6 +197,10 @@ def generate_scheduling_data_batch(env_params):
             # Mutually exclusive
             for m_idx, mutex in enumerate(act.mutually_exclusive[:max_mutex]):
                 activity_mutex[b, a_idx, m_idx] = mutex
+
+            # Successors
+            for s_idx, succ_id in enumerate(successors_map.get(act.id, [])[:max_succs]):
+                activity_successors[b, a_idx, s_idx] = succ_id
         
         # 프로젝트 데이터 채우기
         for p_idx, proj in enumerate(projects):
@@ -205,6 +217,7 @@ def generate_scheduling_data_batch(env_params):
         'objective': env_params.get('objective', 'tardiness'),
         'max_preds': max_preds,
         'max_mutex': max_mutex,
+        'max_succs': max_succs,
     }
     
     problem = {
@@ -213,6 +226,7 @@ def generate_scheduling_data_batch(env_params):
         'activity_project': activity_project,  # (batch_size, max_activities)
         'activity_eligible_teams': activity_eligible_teams,  # (batch_size, max_activities, N_T)
         'activity_predecessors': activity_predecessors,  # (batch_size, max_activities, max_preds)
+        'activity_successors': activity_successors,     # (batch_size, max_activities, max_succs)
         'activity_mutex': activity_mutex,  # (batch_size, max_activities, max_mutex)
         'project_release_time': project_release_time,  # (batch_size, N_P)
         'project_due_date': project_due_date,  # (batch_size, N_P)

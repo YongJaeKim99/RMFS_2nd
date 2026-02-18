@@ -90,7 +90,7 @@ class DualAttentionNetwork(nn.Module):
                 )
             )
 
-    def forward(self, fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx):
+    def forward(self, fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx, pred_idx, succ_idx):
         """
         :param candidate: the index of candidates  [sz_b, J]
         :param fea_j: input activity feature vectors with shape [sz_b, N, fea_j_input_dim]
@@ -99,6 +99,8 @@ class DualAttentionNetwork(nn.Module):
         :param fea_m: input team feature vectors with shape [sz_b, M, fea_m_input_dim]
         :param mch_mask: used for masking attention coefficients (with shape [sz_b, M, M])
         :param comp_idx: a tensor with shape [sz_b, M, M, J] used for computing T_E
+        :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
+        :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
         :return:
             fea_j.shape = [sz_b, N, output_dim]
             fea_m.shape = [sz_b, M, output_dim]
@@ -117,7 +119,7 @@ class DualAttentionNetwork(nn.Module):
             fea_j_jc = torch.gather(fea_j, 1, candidate_idx).type(torch.float32)
             comp_val_layer = torch.matmul(comp_idx_for_mul,
                                      fea_j_jc).reshape(sz_b, M, M, -1)
-            fea_j = self.op_attention_blocks[layer](fea_j, op_mask)
+            fea_j = self.op_attention_blocks[layer](fea_j, op_mask, pred_idx, succ_idx)
             fea_m = self.mch_attention_blocks[layer](fea_m, mch_mask, comp_val_layer)
 
         fea_j_global = nonzero_averaging(fea_j)
@@ -165,7 +167,8 @@ class DANIEL(nn.Module):
             1
         ).to(device)
 
-    def forward(self, fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx, dynamic_pair_mask, fea_pairs):
+    def forward(self, fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx,
+                dynamic_pair_mask, fea_pairs, pred_idx, succ_idx):
         """
         :param fea_j: activity feature vectors [sz_b, N, fea_j_input_dim]
         :param op_mask: activity attention mask [sz_b, N, 3]
@@ -175,12 +178,14 @@ class DANIEL(nn.Module):
         :param comp_idx: competition index [sz_b, M, M, J]
         :param dynamic_pair_mask: incompatible pair mask [sz_b, J, M]  (True = masked)
         :param fea_pairs: pair feature vectors [sz_b, J, M, 8]
+        :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
+        :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
         :return:
             pi: scheduling policy [sz_b, J*M]
             v:  state value [sz_b, 1]
         """
         fea_j, fea_m, fea_j_global, fea_m_global = self.feature_exact(
-            fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx
+            fea_j, op_mask, candidate, fea_m, mch_mask, comp_idx, pred_idx, succ_idx
         )
         sz_b, M, _, J = comp_idx.size()
         d = fea_j.size(-1)
