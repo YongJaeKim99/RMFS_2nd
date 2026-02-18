@@ -128,7 +128,8 @@ class SchedulingEnv:
         # Activity 상태 (Static + Dynamic)
         # ========================================
         # Static (device로 이동)
-        self.activity_duration = self.problem['activity_duration'].to(self.device)  # (batch_size, max_N_A)
+        self.activity_duration = self.problem['activity_duration'].to(self.device)              # (batch_size, max_N_A) 평균 처리 시간
+        self.activity_team_duration = self.problem['activity_team_duration'].to(self.device)   # (batch_size, max_N_A, N_T) 팀별 처리 시간
         self.activity_project = self.problem['activity_project'].to(self.device)  # (batch_size, max_N_A)
         self.activity_eligible_teams = self.problem['activity_eligible_teams'].to(self.device)  # (batch_size, max_N_A, N_T)
         self.activity_predecessors = self.problem['activity_predecessors'].to(self.device)  # (batch_size, max_N_A, max_preds)
@@ -612,8 +613,8 @@ class SchedulingEnv:
             mutex_clear = torch.where(mp_running, mp_end_time, torch.zeros_like(mp_end_time)).max(dim=1)[0]
             start_times = torch.max(start_times, mutex_clear)
 
-        # 종료 시간 계산
-        end_times = start_times + self.activity_duration[batch_idxs, acts]  # (n_active,)
+        # 종료 시간 계산 (팀별 처리 시간 사용)
+        end_times = start_times + self.activity_team_duration[batch_idxs, acts, teams]  # (n_active,)
 
         # Activity 상태 업데이트
         self.activity_started[batch_idxs, acts] = True
@@ -1241,11 +1242,11 @@ class SchedulingEnv:
         # 9. fea_team (B, T, 8)
         # ========================================
         t0 = avail_pair.sum(dim=1).float() / max(1, N)  # available activity count per team
-        
+
         unstarted_elig = self.activity_eligible_teams & (~self.activity_started & valid_act).unsqueeze(2)
         t1 = unstarted_elig.sum(dim=1).float() / max(1, N)  # compatible unstarted count
-        
-        dur_exp = self.activity_duration.unsqueeze(2).expand(-1, -1, T)
+
+        dur_exp = self.activity_team_duration  # (B, N, T) 팀별 처리 시간 (비적합 팀은 0)
         dur_masked = torch.where(unstarted_elig, dur_exp, torch.full_like(dur_exp, float('inf')))
         t2_raw = dur_masked.min(dim=1)[0]
         t2 = torch.where(t2_raw.isinf(), torch.zeros_like(t2_raw), t2_raw / max_dur)
@@ -1269,10 +1270,9 @@ class SchedulingEnv:
         # ========================================
         # 9. fea_pairs (B, N, T, 8) — pair features (activity-team)
         # ========================================
-        # act_dur: (B, N) — 직접 activity duration 사용 (candidate gather 불필요)
-        act_dur = self.activity_duration  # (B, N)
+        # act_pt: (B, N, T) — 팀별 처리 시간 (비적합 팀은 이미 0)
         eligible = self.activity_eligible_teams  # (B, N, T)
-        act_pt = act_dur.unsqueeze(2) * eligible.float()  # (B, N, T)
+        act_pt = self.activity_team_duration * eligible.float()  # (B, N, T)
 
         max_act_pt = act_pt.max(dim=2, keepdim=True)[0].clamp(min=1e-8)
         team_max_pt = act_pt.max(dim=1, keepdim=True)[0].clamp(min=1e-8)

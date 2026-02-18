@@ -319,7 +319,76 @@ if __name__ == "__main__":
         
         print(f"결과가 {output_path}에 저장되었습니다.")
         return output_path
-    
+
+    def save_ga_results_to_excel(ga_results, ga_all_repeats):
+        """GA 결과를 엑셀 파일로 저장 (반복 실행 전체 포함)"""
+        output_path = session_results_dir / 'RCMPSP_GA.xlsx'
+
+        # Experiment info
+        exp_rows = [
+            {'Item': 'Algorithm',        'Value': 'GA'},
+            {'Item': 'Population Size',  'Value': GA_POPULATION_SIZE},
+            {'Item': 'Generations',      'Value': GA_GENERATIONS},
+            {'Item': 'Decode Mode',      'Value': GA_DECODE_MODE},
+            {'Item': 'Release Mode',     'Value': GA_RELEASE_MODE},
+            {'Item': 'Mutex Mode',       'Value': GA_MUTEX_MODE},
+            {'Item': 'Repeats/Instance', 'Value': GA_REPEATS},
+            {'Item': 'Device',           'Value': 'CPU'},
+            {'Item': 'Test Files',       'Value': f'{TEST_FILE_START} to {TEST_FILE_END}'},
+        ]
+        if SEED is not None:
+            exp_rows.append({'Item': 'Random Seed', 'Value': SEED})
+        experiment_info_df = pd.DataFrame(exp_rows, columns=['Item', 'Value'])
+
+        if not ga_results:
+            print("결과 데이터가 없습니다: GA")
+            return None
+
+        # Detailed_Results: 반복 실행 전체 (instance × repeat)
+        detailed_data = []
+        for r in ga_all_repeats:
+            detailed_data.append({
+                'Instance': r['instance'],
+                'Repeat':   r['repeat'],
+                OBJECTIVE.capitalize(): r['objective_value'],
+                'Runtime':  r['runtime'],
+            })
+        detailed_df = pd.DataFrame(detailed_data)
+
+        # Instance_Summary: 인스턴스별 best / avg
+        instance_summary_data = []
+        for r in ga_results:
+            instance_summary_data.append({
+                'Instance':                       r['instance'],
+                f'Best {OBJECTIVE.capitalize()}': r['best_objective'],
+                f'Avg {OBJECTIVE.capitalize()}':  r['avg_objective'],
+                'Total Runtime':                  r['runtime'],
+            })
+        instance_summary_df = pd.DataFrame(instance_summary_data)
+
+        # Overall_Average: 전체 평균
+        best_objs = [r['best_objective'] for r in ga_results if r['best_objective'] is not None]
+        avg_objs  = [r['avg_objective']  for r in ga_results if r['avg_objective']  is not None]
+        overall_avg_df = pd.DataFrame([{
+            'Algorithm':                             'GA',
+            f'Avg of Best {OBJECTIVE.capitalize()}': np.mean(best_objs) if best_objs else None,
+            f'Avg of Avg {OBJECTIVE.capitalize()}':  np.mean(avg_objs)  if avg_objs  else None,
+            'Avg Total Runtime':                     np.mean([r['runtime'] for r in ga_results]),
+        }])
+
+        for df in [detailed_df, instance_summary_df, overall_avg_df]:
+            num_cols = df.select_dtypes(include=[np.number]).columns
+            df[num_cols] = df[num_cols].round(4)
+
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            experiment_info_df.to_excel(writer,  sheet_name='Experiment_Info',  index=False)
+            detailed_df.to_excel(writer,         sheet_name='Detailed_Results', index=False)
+            instance_summary_df.to_excel(writer, sheet_name='Instance_Summary', index=False)
+            overall_avg_df.to_excel(writer,      sheet_name='Overall_Average',  index=False)
+
+        print(f"결과가 {output_path}에 저장되었습니다.")
+        return output_path
+
     # -----------------------------
     # 6) 데이터 경로 설정
     # -----------------------------
@@ -417,6 +486,7 @@ if __name__ == "__main__":
         print(f"{'='*60}")
         
         ga_results = []
+        ga_all_repeats = []
 
         from data_generator import convert_problem_to_ga_format
 
@@ -442,12 +512,14 @@ if __name__ == "__main__":
                     # pickle 데이터를 GA 형식으로 변환
                     projects = convert_problem_to_ga_format(problem, batch_idx, env_params['N_T'])
 
-                    # GA 반복 실행 (best objective 채택)
+                    # GA 반복 실행 (전체 결과 수집, best 채택)
                     best_solution = None
                     best_ga = None
-                    objective_value = float('inf')
+                    best_objective = float('inf')
+                    rep_objectives = []
 
                     for rep in range(GA_REPEATS):
+                        rep_start = time.time()
                         ga = GeneticAlgorithm(
                             projects=projects,
                             num_teams=env_params['N_T'],
@@ -461,8 +533,19 @@ if __name__ == "__main__":
                             verbose=GA_VERBOSE
                         )
                         sol = ga.evolve()
-                        if sol.objective < objective_value:
-                            objective_value = sol.objective
+                        rep_runtime = time.time() - rep_start
+
+                        rep_obj = sol.objective
+                        rep_objectives.append(rep_obj)
+                        ga_all_repeats.append({
+                            'instance':        i,
+                            'repeat':          rep + 1,
+                            'objective_value': rep_obj,
+                            'runtime':         rep_runtime,
+                        })
+
+                        if rep_obj < best_objective:
+                            best_objective = rep_obj
                             best_solution = sol
                             best_ga = ga
 
@@ -471,16 +554,21 @@ if __name__ == "__main__":
                     end_time = time.time()
                     runtime = end_time - start_time
 
+                    avg_objective = np.mean(rep_objectives)
                     result = {
-                        'algorithm': 'GA',
-                        'instance': i,
-                        'objective_value': objective_value,
-                        'runtime': runtime
+                        'algorithm':      'GA',
+                        'instance':       i,
+                        'best_objective': best_objective,
+                        'avg_objective':  avg_objective,
+                        'runtime':        runtime
                     }
                     ga_results.append(result)
 
-                    rep_str = f" (best of {GA_REPEATS})" if GA_REPEATS > 1 else ""
-                    print(f"   [GA][Instance {i}] {OBJECTIVE}: {objective_value:.4f}, Runtime: {runtime:.4f}s{rep_str}")
+                    if GA_REPEATS > 1:
+                        rep_str = f" (best of {GA_REPEATS} runs, avg: {avg_objective:.4f})"
+                    else:
+                        rep_str = ""
+                    print(f"   [GA][Instance {i}] {OBJECTIVE}: best={best_objective:.4f}, Runtime: {runtime:.4f}s{rep_str}")
                     
                     # 간트차트 및 선후관계 그래프 생성
                     if SAVE_GANTT_CHART:
@@ -494,7 +582,7 @@ if __name__ == "__main__":
                                 activity_to_project=ga.activity_to_project,
                                 num_teams=env_params['N_T'],
                                 instance_name=f"instance_{i}",
-                                objective_value=objective_value,
+                                objective_value=best_objective,
                                 project_due_dates=project_due_dates,
                                 save_dir=gantt_dir,
                                 show=SHOW_GANTT_CHART
@@ -528,13 +616,18 @@ if __name__ == "__main__":
         
         # GA 결과 저장
         if ga_results:
-            valid_objectives = [r['objective_value'] for r in ga_results if r['objective_value'] is not None]
-            if valid_objectives:
-                avg_objective = np.mean(valid_objectives)
-                algorithm_summaries['GA'] = avg_objective
-                print(f"  GA 평균 {OBJECTIVE}: {avg_objective:.4f}")
-            
-            output_path = save_results_to_excel(ga_results, 'GA', 'N/A')
+            best_objs = [r['best_objective'] for r in ga_results if r['best_objective'] is not None]
+            avg_objs  = [r['avg_objective']  for r in ga_results if r['avg_objective']  is not None]
+            if best_objs:
+                avg_of_best = np.mean(best_objs)
+                avg_of_avg  = np.mean(avg_objs) if avg_objs else None
+                algorithm_summaries['GA (best)'] = avg_of_best
+                if avg_of_avg is not None:
+                    algorithm_summaries['GA (avg)'] = avg_of_avg
+                print(f"  GA 평균 {OBJECTIVE}: best={avg_of_best:.4f}" +
+                      (f", avg={avg_of_avg:.4f}" if avg_of_avg is not None else ""))
+
+            output_path = save_ga_results_to_excel(ga_results, ga_all_repeats)
             if output_path:
                 saved_files.append(output_path)
     

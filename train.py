@@ -160,7 +160,9 @@ if __name__ == "__main__":
          'duration_min': 1,  # 최소 작업 시간 (논문: low=1)
          'duration_max': 99,  # 최대 작업 시간 (논문: high=99)
          'precedence_prob': 0.3,  # 선행 관계 생성 확률
-         'mutex_prob': 0.1,  # 동시 불가 생성 확률
+         'mutex_prob': 0.03,  # 동시 불가 생성 확률
+         'max_preds': 5,   # activity당 최대 선행 작업 수 (tensor 패딩 크기)
+         'max_mutex': 2,  # activity당 최대 동시 불가 작업 수 (tensor 패딩 크기)
          'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
          'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
          'objective': OBJECTIVE,
@@ -185,6 +187,8 @@ if __name__ == "__main__":
         'duration_max': 10,  # 최대 작업 시간 (6 → 10)
         'precedence_prob': 0.3,  # 선행 관계 생성 확률
         'mutex_prob': 0.1,  # 동시 불가 생성 확률
+        'max_preds': 5,   # activity당 최대 선행 작업 수
+        'max_mutex': 10,  # activity당 최대 동시 불가 작업 수
         'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
         'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
         'objective': OBJECTIVE,
@@ -200,20 +204,21 @@ if __name__ == "__main__":
             'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
         }
     elif MODEL_TYPE == 'daniel':
-        # # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
-        # model_params = {
-        #     'fea_act_input_dim': 10,
-        #     'fea_team_input_dim': 8,
-        #     'num_heads_AAB': [4, 4],
-        #     'num_heads_TAB': [4, 4],
-        #     'layer_fea_output_dim': [32, 8],
-        #     'dropout_prob': 0.0,
-        #     'num_mlp_layers_actor': 3,
-        #     'hidden_dim_actor': 64,
-        #     'num_mlp_layers_critic': 3,
-        #     'hidden_dim_critic': 64,
-        # }
-        # RTX 5090 확장 파라미터 (~300K params)
+         # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
+        model_params = {
+             'fea_act_input_dim': 10,
+             'fea_team_input_dim': 8,
+             'num_heads_AAB': [4, 4],
+             'num_heads_TAB': [4, 4],
+             'layer_fea_output_dim': [32, 8],
+             'dropout_prob': 0.0,
+             'num_mlp_layers_actor': 3,
+             'hidden_dim_actor': 64,
+             'num_mlp_layers_critic': 3,
+             'hidden_dim_critic': 64,
+        }
+        # 큰 사이즈 파라미터 (~300K params)
+        '''
         model_params = {
             # DAN (Dual Attention Network) 파라미터
             'fea_act_input_dim': 10,    # Activity 피처 차원 (env 출력과 일치)
@@ -228,6 +233,7 @@ if __name__ == "__main__":
             'num_mlp_layers_critic': 3,
             'hidden_dim_critic': 256,
         }
+        '''
     else:
         raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Use 'gat' or 'daniel'.")
 

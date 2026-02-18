@@ -15,7 +15,8 @@ class Activity:
     """Activity 정보"""
     id: int
     project_id: int
-    duration: int
+    duration: float              # 가능한 팀의 처리 시간 평균
+    duration_by_team: List[int]  # 팀별 처리 시간 (비적합 팀은 0)
     eligible_teams: List[int]
     predecessors: List[int]
     mutually_exclusive: List[int]
@@ -73,26 +74,36 @@ def generate_scheduling_data_batch(env_params):
             # Activity 생성
             activities = []
             for a in range(n_activities):
-                # Duration 생성
-                duration = random.randint(duration_min, duration_max)
-                
                 # Eligible teams 생성 (평균 eligible_teams_ratio 비율)
                 num_eligible = max(1, int(N_T * eligible_teams_ratio))
                 num_eligible = random.randint(max(1, num_eligible - 1), min(N_T, num_eligible + 1))
                 eligible_teams = sorted(random.sample(range(N_T), num_eligible))
-                
-                # Predecessors (프로젝트 내에서만)
+
+                # 팀별 처리 시간 생성 (eligible 팀만 값을 가짐, 나머지는 0)
+                duration_by_team = [0] * N_T
+                for team in eligible_teams:
+                    duration_by_team[team] = random.randint(duration_min, duration_max)
+                eligible_durs = [duration_by_team[t] for t in eligible_teams]
+                duration = sum(eligible_durs) / len(eligible_durs)  # 평균 처리 시간
+
+                # Predecessors (프로젝트 내에서만, spanning tree로 고립 노드 방지)
                 predecessors = []
-                if a > 0 and random.random() < precedence_prob:
-                    # 이전 activity 중 일부를 선행 작업으로 지정
-                    num_preds = random.randint(1, min(2, a))  # 최대 2개
-                    pred_indices = random.sample(range(a), num_preds)
-                    predecessors = [act_id_counter - a + idx for idx in pred_indices]
-                
+                if a > 0:
+                    # 반드시 선행자 1개 지정 (spanning tree -- 고립 노드 없음 보장)
+                    project_start = act_id_counter - a
+                    mandatory_pred_idx = random.randint(0, a - 1)
+                    predecessors = [project_start + mandatory_pred_idx]
+                    # 추가 선행자 1개 (확률적)
+                    if random.random() < precedence_prob and a >= 2:
+                        other_options = [i for i in range(a) if i != mandatory_pred_idx]
+                        extra_idx = random.choice(other_options)
+                        predecessors.append(project_start + extra_idx)
+
                 activity = Activity(
                     id=act_id_counter,
                     project_id=p,
                     duration=duration,
+                    duration_by_team=duration_by_team,
                     eligible_teams=eligible_teams,
                     predecessors=predecessors,
                     mutually_exclusive=[]  # 나중에 추가
@@ -138,14 +149,15 @@ def generate_scheduling_data_batch(env_params):
     
     # Tensor로 변환
     # Activity 속성들을 tensor로 변환
-    activity_duration = torch.zeros(batch_size, max_activities, dtype=torch.float)
+    activity_duration = torch.zeros(batch_size, max_activities, dtype=torch.float)          # (B, N) 평균 처리 시간
+    activity_team_duration = torch.zeros(batch_size, max_activities, N_T, dtype=torch.float) # (B, N, T) 팀별 처리 시간
     activity_project = torch.full((batch_size, max_activities), -1, dtype=torch.long)
     activity_eligible_teams = torch.zeros(batch_size, max_activities, N_T, dtype=torch.bool)
     
-    # 제약 관계는 adjacency matrix로 표현
-    max_preds = 5  # 최대 선행 작업 수
+    # 제약 관계는 adjacency matrix로 표현 (env_params으로 제어 가능)
+    max_preds = env_params.get('max_preds', 5)   # 최대 선행 작업 수
     activity_predecessors = torch.full((batch_size, max_activities, max_preds), -1, dtype=torch.long)
-    max_mutex = 10  # 최대 동시 불가 작업 수
+    max_mutex = env_params.get('max_mutex', 10)  # 최대 동시 불가 작업 수
     activity_mutex = torch.full((batch_size, max_activities, max_mutex), -1, dtype=torch.long)
     
     # 프로젝트 정보
@@ -163,8 +175,9 @@ def generate_scheduling_data_batch(env_params):
         # Activity 데이터 채우기
         for a_idx, act in enumerate(activities):
             activity_duration[b, a_idx] = act.duration
+            activity_team_duration[b, a_idx] = torch.tensor(act.duration_by_team, dtype=torch.float)
             activity_project[b, a_idx] = act.project_id
-            
+
             # Eligible teams (one-hot)
             for team in act.eligible_teams:
                 activity_eligible_teams[b, a_idx, team] = True
@@ -190,10 +203,13 @@ def generate_scheduling_data_batch(env_params):
         'batch_size': batch_size,
         'pomo_size': pomo_size,
         'objective': env_params.get('objective', 'tardiness'),
+        'max_preds': max_preds,
+        'max_mutex': max_mutex,
     }
     
     problem = {
-        'activity_duration': activity_duration,  # (batch_size, max_activities)
+        'activity_duration': activity_duration,       # (batch_size, max_activities) 평균 처리 시간
+        'activity_team_duration': activity_team_duration,  # (batch_size, max_activities, N_T) 팀별 처리 시간
         'activity_project': activity_project,  # (batch_size, max_activities)
         'activity_eligible_teams': activity_eligible_teams,  # (batch_size, max_activities, N_T)
         'activity_predecessors': activity_predecessors,  # (batch_size, max_activities, max_preds)
