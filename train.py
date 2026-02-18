@@ -31,10 +31,10 @@ if __name__ == "__main__":
     # 알고리즘별 기본 하이퍼파라미터 (논문 값 기준)
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
-        EPOCHS                = 200       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 3       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        EPOCHS                = 1000       # 논문: max_updates = 1,000
+        BATCH_SIZE            = 128       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
-        VALIDATION_INTERVAL   = 10         # 논문: validate_timestep = 10
+        VALIDATION_INTERVAL   = 20         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 1e-6}}  # 논문: 3×10⁻⁴
@@ -89,9 +89,9 @@ if __name__ == "__main__":
     USE_VALIDATION = True
 
     # Wait / Dominance 옵션 (DANIEL action space)
-    ALLOW_WAIT_RELEASE = False   # True: release time 미도래 activity도 대기 후 스케줄 허용
-    ALLOW_WAIT_MUTEX = False     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
-    DOMINANCE_RULE = False       # True: 대기 pair의 dominance 필터링
+    ALLOW_WAIT_RELEASE = True   # True: release time 미래 activity도 대기 후 스케줄 허용
+    ALLOW_WAIT_MUTEX = True     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
+    DOMINANCE_RULE = True       # True: 대기 pair의 dominance 필터링
 
     # Reward 방식 선택
     #REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)

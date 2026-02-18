@@ -1,0 +1,44 @@
+{"time":"2026-02-18T22:37:38.6353128+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260218_223738-v1fknteb\\logs\\debug-core.log"}
+{"time":"2026-02-18T22:37:39.0276012+09:00","level":"INFO","msg":"created new stream","id":"v1fknteb"}
+{"time":"2026-02-18T22:37:39.0281268+09:00","level":"INFO","msg":"stream: started","id":"v1fknteb"}
+{"time":"2026-02-18T22:37:39.0281268+09:00","level":"INFO","msg":"handler: started","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:37:39.0281268+09:00","level":"INFO","msg":"sender: started","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:37:39.0281268+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:37:39.4201074+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-18T22:37:54.5396243+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:38:09.487292+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:38:24.5402989+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:38:39.5698937+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:38:54.4979564+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:39:09.5204552+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:39:24.552476+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:39:39.4668196+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:39:54.4602027+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:40:09.4887467+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:40:24.4653687+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:40:39.4650259+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:40:54.4623297+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:41:09.4650097+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:41:24.4656171+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:41:39.5976618+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:41:54.5435536+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:42:09.487203+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:42:24.5784549+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:42:39.5461228+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:42:54.4421334+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:43:09.4883202+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:43:24.5283861+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:43:39.4884697+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:43:54.5396435+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:44:09.4786183+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:44:24.4529968+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:44:39.4481382+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:44:54.5464931+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-18T22:44:56.5001471+09:00","level":"INFO","msg":"stream: closing","id":"v1fknteb"}
+{"time":"2026-02-18T22:44:56.5001471+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-18T22:44:56.5001471+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-18T22:44:57.3040318+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-18T22:44:57.66866+09:00","level":"INFO","msg":"handler: closed","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:44:57.66866+09:00","level":"INFO","msg":"sender: closed","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:44:57.66866+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"v1fknteb"}
+{"time":"2026-02-18T22:44:57.66866+09:00","level":"INFO","msg":"stream: closed","id":"v1fknteb"}

@@ -1,0 +1,15 @@
+{"time":"2026-02-18T21:59:27.7841665+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260218_215927-qkam4v90\\logs\\debug-core.log"}
+{"time":"2026-02-18T21:59:28.1533732+09:00","level":"INFO","msg":"created new stream","id":"qkam4v90"}
+{"time":"2026-02-18T21:59:28.1533732+09:00","level":"INFO","msg":"stream: started","id":"qkam4v90"}
+{"time":"2026-02-18T21:59:28.1533732+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:28.1533732+09:00","level":"INFO","msg":"sender: started","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:28.1533732+09:00","level":"INFO","msg":"handler: started","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:28.5564369+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-18T21:59:42.8347105+09:00","level":"INFO","msg":"stream: closing","id":"qkam4v90"}
+{"time":"2026-02-18T21:59:42.8347105+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-18T21:59:42.8347105+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-18T21:59:43.6858818+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-18T21:59:44.0629445+09:00","level":"INFO","msg":"handler: closed","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:44.0629445+09:00","level":"INFO","msg":"sender: closed","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:44.0629445+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"qkam4v90"}
+{"time":"2026-02-18T21:59:44.0638922+09:00","level":"INFO","msg":"stream: closed","id":"qkam4v90"}

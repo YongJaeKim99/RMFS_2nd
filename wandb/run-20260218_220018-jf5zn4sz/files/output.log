@@ -1,0 +1,116 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  [Step 1] Started: 6 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 2] Started: 7 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 3] Started: 8 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 4] Started: 9 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 5] Started: 10 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 6] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 7] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 8] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 9] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 10] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 11] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 12] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 13] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 14] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 15] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 16] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 17] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 18] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 19] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 20] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 21] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 22] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 23] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 24] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 25] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 26] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 27] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 28] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 29] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 30] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 31] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 32] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 33] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 34] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 35] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 36] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 37] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 38] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 39] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 40] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 41] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 42] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 43] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 44] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 45] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 46] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 47] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 48] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 49] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 50] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 51] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 52] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 53] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 54] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 55] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 56] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 57] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 58] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 59] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 60] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 61] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 62] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 63] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 64] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 65] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 66] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 67] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+  [Step 68] Started: 11 / 54, Ended: 5 / 54 (per instance, B=50)
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 361, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 290, in run
+    val_obj_avg = self._eval_validation(validation_batch_size, validation_pomo_size)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 1314, in _eval_validation
+    pi, v = self.model(
+            ^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 187, in forward
+    fea_j, fea_m, fea_j_global, fea_m_global = self.feature_exact(
+                                               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 122, in forward
+    fea_j = self.op_attention_blocks[layer](fea_j, op_mask, pred_idx, succ_idx)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 129, in forward
+    h_heads = [att(h, op_mask, pred_idx, succ_idx) for att in self.attentions]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 75, in forward
+    Wh_concat = torch.stack([pred_agg, Wh, succ_agg], dim=-2)    # (B, N, 3, D)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

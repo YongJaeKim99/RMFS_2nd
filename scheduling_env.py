@@ -491,11 +491,29 @@ class SchedulingEnv:
 
         if self.step_log:
             self._env_step_count += 1
-            # 패딩 포함 max_N_A 기준: 모든 인스턴스가 동일한 카운트
-            per_inst_started = self.activity_started[0].sum().item()
-            per_inst_ended = self.activity_ended[0].sum().item()
-            total = self.max_N_A
-            print(f"  [Step {self._env_step_count}] Started: {int(per_inst_started)} / {total}, Ended: {int(per_inst_ended)} / {total} (per instance, B={self.batch_size})")
+            # 패딩 제외 실제 활동 기준으로 집계
+            padding_cnt = (self.max_N_A - self.num_activities)          # (B,)
+            real_started = self.activity_started.sum(dim=1) - padding_cnt  # (B,)
+            real_ended   = self.activity_ended.sum(dim=1)   - padding_cnt  # (B,)
+            avg_n = self.num_activities.float().mean().item()
+            avg_e = real_ended.float().mean().item()
+            s_min, s_max = real_started.min().item(), real_started.max().item()
+            # 진짜 불일치 검사: expected = min(step_count, num_activities[b])
+            # s_min < s_max 이더라도 인스턴스별 num_activities 차이(완료 인스턴스) 때문일 수 있으므로
+            # 실제로 step 수보다 적게 스케줄된 인스턴스가 있는지만 체크
+            expected = torch.minimum(
+                torch.full_like(self.num_activities, self._env_step_count),
+                self.num_activities)
+            behind = (expected - real_started).clamp(min=0)  # (B,) 양수 = 해당 step수만큼 안 스케줄됨
+            n_behind = (behind > 0).sum().item()
+            if n_behind > 0:
+                print(f"  ⚠️  [Step {self._env_step_count}] Started 진짜 불일치! "
+                      f"{n_behind}개 인스턴스 미달 (max_behind={int(behind.max().item())}, "
+                      f"range={int(s_min)}~{int(s_max)}) / {avg_n:.0f} avg, Ended: {avg_e:.1f} (B={self.batch_size})")
+            else:
+                # 범위 차이는 인스턴스별 num_activities 차이(완료 인스턴스) — 정상
+                print(f"  [Step {self._env_step_count}] Started: {int(s_min)}~{int(s_max)} / {avg_n:.0f} avg, "
+                      f"Ended: {avg_e:.1f} (B={self.batch_size})")
 
         # Step-wise reward 계산
         if self.reward_type == 'stepwise':
@@ -534,11 +552,29 @@ class SchedulingEnv:
 
         if self.step_log:
             self._env_step_count += 1
-            # 패딩 포함 max_N_A 기준: 모든 인스턴스가 동일한 카운트
-            per_inst_started = self.activity_started[0].sum().item()
-            per_inst_ended = self.activity_ended[0].sum().item()
-            total = self.max_N_A
-            print(f"  [Step {self._env_step_count}] Started: {int(per_inst_started)} / {total}, Ended: {int(per_inst_ended)} / {total} (per instance, B={self.batch_size})")
+            # 패딩 제외 실제 활동 기준으로 집계
+            padding_cnt = (self.max_N_A - self.num_activities)          # (B,)
+            real_started = self.activity_started.sum(dim=1) - padding_cnt  # (B,)
+            real_ended   = self.activity_ended.sum(dim=1)   - padding_cnt  # (B,)
+            avg_n = self.num_activities.float().mean().item()
+            avg_e = real_ended.float().mean().item()
+            s_min, s_max = real_started.min().item(), real_started.max().item()
+            # 진짜 불일치 검사: expected = min(step_count, num_activities[b])
+            # s_min < s_max 이더라도 인스턴스별 num_activities 차이(완료 인스턴스) 때문일 수 있으므로
+            # 실제로 step 수보다 적게 스케줄된 인스턴스가 있는지만 체크
+            expected = torch.minimum(
+                torch.full_like(self.num_activities, self._env_step_count),
+                self.num_activities)
+            behind = (expected - real_started).clamp(min=0)  # (B,) 양수 = 해당 step수만큼 안 스케줄됨
+            n_behind = (behind > 0).sum().item()
+            if n_behind > 0:
+                print(f"  ⚠️  [Step {self._env_step_count}] Started 진짜 불일치! "
+                      f"{n_behind}개 인스턴스 미달 (max_behind={int(behind.max().item())}, "
+                      f"range={int(s_min)}~{int(s_max)}) / {avg_n:.0f} avg, Ended: {avg_e:.1f} (B={self.batch_size})")
+            else:
+                # 범위 차이는 인스턴스별 num_activities 차이(완료 인스턴스) — 정상
+                print(f"  [Step {self._env_step_count}] Started: {int(s_min)}~{int(s_max)} / {avg_n:.0f} avg, "
+                      f"Ended: {avg_e:.1f} (B={self.batch_size})")
 
         # Step-wise reward 계산
         if self.reward_type == 'stepwise':
@@ -1145,11 +1181,34 @@ class SchedulingEnv:
         f4 = pred_done_cnt / total_pred_cnt
 
         f5 = ready.float()  # currently ready (simplified waiting indicator)
-        f6 = torch.where(
+
+        # f6: C(activity) LB — Estimated completion time lower bound (논문 피처 6)
+        # Scheduled: actual end_time (확정값)
+        # Unscheduled: release + max(pred LB) + duration (iterative DAG relaxation)
+        # preds / valid_pred_mask / safe_preds 는 위에서 이미 계산됨 (재사용)
+        completion_lb = torch.where(
             self.activity_started,
-            self.activity_start_time / max_time_val,
-            torch.zeros_like(self.activity_start_time)
+            self.activity_end_time,
+            act_release + self.activity_duration
         )
+        completion_lb = torch.where(valid_act, completion_lb, torch.zeros_like(completion_lb))
+        max_preds_dim = preds.shape[2]
+        for _ in range(self.N_A_max):
+            pred_comp = torch.gather(
+                completion_lb, 1, safe_preds.reshape(B, -1)
+            ).reshape(B, N, max_preds_dim)
+            pred_comp = torch.where(valid_pred_mask, pred_comp, torch.zeros_like(pred_comp))
+            max_pred_comp = pred_comp.max(dim=2)[0]  # (B, N)
+            new_comp = torch.where(
+                self.activity_started,
+                self.activity_end_time,
+                torch.max(act_release, max_pred_comp) + self.activity_duration
+            )
+            new_comp = torch.where(valid_act, new_comp, torch.zeros_like(new_comp))
+            if torch.equal(new_comp, completion_lb):
+                break
+            completion_lb = new_comp
+        f6 = completion_lb / max(1.0, max_time_val)
 
         # Project remaining act/work ratios (mapped per activity)
         f7 = torch.gather(proj_rem_count, 1, act_proj_safe) / torch.gather(proj_tot_count, 1, act_proj_safe)
@@ -1191,16 +1250,23 @@ class SchedulingEnv:
         # ========================================
         # 5. dynamic_pair_mask (B, N, T) — True=masked
         # ========================================
-        # 기본 마스킹: 패딩, 이미 시작됨, 선행자 미완료, eligibility 없음, 팀 비가용
+        # 기본 마스킹: 패딩, 이미 시작됨, 선행자 미완료, eligibility 없음
         dynamic_pair_mask = (
             ~valid_act.unsqueeze(2)                    # 패딩 activity
             | self.activity_started.unsqueeze(2)       # 이미 시작됨
             | (~all_preds_done).unsqueeze(2)           # 선행자 미완료
             | ~self.activity_eligible_teams            # 팀 eligibility 없음
-            | ~team_avail_now.unsqueeze(1)             # 팀 비가용 (busy)
         )  # (B, N, T)
 
-        # Wait 옵션에 따라 release/mutex 조건 on/off
+        # Wait 옵션이 없을 때만 팀 비가용 마스킹
+        # Wait 옵션 사용 시 _update_available_actions의 wait_base는 team_ok를 요구하지 않으므로
+        # (바쁜 팀에도 미래 시작 시간으로 assign 가능), dynamic_pair_mask도 이에 맞춰 팀 마스크 제거.
+        # 이를 제거하지 않으면: 모든 ready activity의 eligible 팀이 전부 바쁠 때
+        # 모델이 유효 action이 없어 이미 시작된 활동을 재선택하는 무한루프 발생.
+        if not (self.allow_wait_release or self.allow_wait_mutex):
+            dynamic_pair_mask = dynamic_pair_mask | ~team_avail_now.unsqueeze(1)
+
+        # Release/mutex 조건 on/off
         if not self.allow_wait_release:
             dynamic_pair_mask = dynamic_pair_mask | ~act_released.unsqueeze(2)
         if not self.allow_wait_mutex:

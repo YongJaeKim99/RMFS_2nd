@@ -105,7 +105,7 @@ if __name__ == "__main__":
     # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
     TEST_FILE_START = 0
     TEST_FILE_END = 49
-    GA_REPEATS = 30  # GA를 인스턴스당 반복 실행 횟수 (best objective 채택)
+    GA_REPEATS = 3  # GA를 인스턴스당 반복 실행 횟수 (best objective 채택)
     
     # -----------------------------
     # 3) 기타 설정

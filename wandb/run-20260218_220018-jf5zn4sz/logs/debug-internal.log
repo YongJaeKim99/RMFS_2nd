@@ -1,0 +1,15 @@
+{"time":"2026-02-18T22:00:18.5770122+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260218_220018-jf5zn4sz\\logs\\debug-core.log"}
+{"time":"2026-02-18T22:00:18.9264775+09:00","level":"INFO","msg":"created new stream","id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:18.9264775+09:00","level":"INFO","msg":"stream: started","id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:18.9264775+09:00","level":"INFO","msg":"sender: started","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:18.9264775+09:00","level":"INFO","msg":"handler: started","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:18.9264775+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:19.3681987+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-18T22:00:22.9284263+09:00","level":"INFO","msg":"stream: closing","id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:22.9284263+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-18T22:00:22.9284263+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-18T22:00:23.7401593+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-18T22:00:24.1061986+09:00","level":"INFO","msg":"handler: closed","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:24.106703+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:24.106703+09:00","level":"INFO","msg":"sender: closed","stream_id":"jf5zn4sz"}
+{"time":"2026-02-18T22:00:24.106703+09:00","level":"INFO","msg":"stream: closed","id":"jf5zn4sz"}
