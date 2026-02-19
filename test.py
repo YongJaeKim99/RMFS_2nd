@@ -9,7 +9,6 @@ from datetime import datetime
 import time
 import pickle
 import random
-import copy
 
 from trainer import Scheduling_Trainer
 from scheduling_env import SchedulingEnv
@@ -49,11 +48,6 @@ if __name__ == "__main__":
     # False: 가장 최신 체크포인트만 테스트 (또는 CHECKPOINT_FILE 지정 시 해당 파일만)
     TEST_ALL_CHECKPOINTS = False
     
-    # -----------------------------
-    # 2) 모델 타입 설정
-    # -----------------------------
-    MODEL_TYPE = 'daniel'  # 'gat': GNN(GAT) 모델, 'daniel': DANIEL 모델
-
     # -----------------------------
     # 2-1) 학습 알고리즘 설정 (체크포인트와 일치해야 함)
     # -----------------------------
@@ -98,14 +92,7 @@ if __name__ == "__main__":
     # =================================================================
     # 📊 테스트 데이터 설정
     # =================================================================
-    # 테스트할 데이터 타입 선택
-    # - 'test': data/test/ 폴더의 0.pickle, 1.pickle, ... 파일 사용
-    # - 'val': data/val/ 폴더의 validation 데이터 파일 사용 (train.py에서 자동 생성)
-    TEST_DATA_TYPE = 'val'  # 'test' or 'val'
-    
-    # 테스트 데이터 파일 범위 설정
-    # - 'test' 모드: TEST_FILE_START.pickle ~ TEST_FILE_END.pickle
-    # - 'val' 모드: 단일 파일의 batch 0 ~ (TEST_FILE_END - TEST_FILE_START)
+    # data/test/ 폴더의 0.pickle, 1.pickle, ... 파일 사용
     TEST_FILE_START = 0
     TEST_FILE_END = 49
     GA_REPEATS = 3  # GA를 인스턴스당 반복 실행 횟수 (best objective 채택)
@@ -140,7 +127,6 @@ if __name__ == "__main__":
     print("🎯 테스트 설정")
     print("="*50)
     print(f"  📌 OBJECTIVE: {OBJECTIVE}")
-    print(f"  📌 TEST_DATA_TYPE: {TEST_DATA_TYPE}")
     print(f"  📌 TEST_FILE_RANGE: {TEST_FILE_START}~{TEST_FILE_END}")
     print(f"  📌 ALGORITHMS: {', '.join(test_algorithms)}")
     if "GA" in test_algorithms:
@@ -169,7 +155,7 @@ if __name__ == "__main__":
         'pomo_size': 1,
         'objective': OBJECTIVE,
         'debug_env': DEBUG_ENV,
-        'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
+        'state_mode': 'daniel',
         'allow_wait_release': ALLOW_WAIT_RELEASE,
         'allow_wait_mutex': ALLOW_WAIT_MUTEX,
         'dominance_rule': DOMINANCE_RULE,
@@ -200,7 +186,7 @@ if __name__ == "__main__":
         'device_mode': 'cpu',
         'model_device': 'cpu',
         'env_device': 'cpu',
-        'model_type': MODEL_TYPE,
+        'model_type': 'daniel',
         'algorithm_type': ALGORITHM_TYPE,
     }
     
@@ -369,48 +355,25 @@ if __name__ == "__main__":
     # -----------------------------
     # 6) 데이터 경로 설정
     # -----------------------------
-    if TEST_DATA_TYPE == 'val':
-        data_base_dir = project_root / "data" / "val"
-        val_batch_path = data_base_dir / "val_batch.pickle"
-    else:
-        data_base_dir = project_root / "data" / "test"
-        val_batch_path = None
+    data_base_dir = project_root / "data" / "test"
 
     print(f"📂 데이터 경로: {data_base_dir}")
 
-    # 데이터 폴더/파일 존재 확인 및 env_params 로드
-    if TEST_DATA_TYPE == 'val':
-        if not val_batch_path.exists():
-            print(f"⚠️  경고: Validation 배치 파일이 존재하지 않습니다: {val_batch_path}")
-            print(f"   → train.py에서 USE_VALIDATION=True로 설정하고 학습을 시작하면 자동 생성됩니다.")
-            exit(1)
-        # 배치 파일 로드
-        with open(val_batch_path, 'rb') as f:
-            val_batch_problem = pickle.load(f)
-        # pickle에 저장된 env_params 적용 (batch_size/pomo_size/state_mode/debug_env 제외)
-        saved_env = val_batch_problem['env_params']
+    if not data_base_dir.exists():
+        print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
+        print(f"   테스트 데이터를 먼저 생성해주세요.")
+        exit(1)
+    # 첫 번째 파일에서 env_params 로드
+    first_file = data_base_dir / f"{TEST_FILE_START}.pickle"
+    if first_file.exists():
+        with open(first_file, 'rb') as f:
+            first_problem = pickle.load(f)
+        saved_env = first_problem['env_params']
         for k, v in saved_env.items():
             if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
                 env_params[k] = v
-        print(f"📄 Validation 배치 파일 로드 완료: {val_batch_path}")
-        print(f"   인스턴스 범위: {TEST_FILE_START}~{TEST_FILE_END}")
-    else:
-        val_batch_problem = None
-        if not data_base_dir.exists():
-            print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
-            print(f"   {TEST_DATA_TYPE} 데이터를 먼저 생성해주세요.")
-            exit(1)
-        # 첫 번째 파일에서 env_params 로드
-        first_file = data_base_dir / f"{TEST_FILE_START}.pickle"
-        if first_file.exists():
-            with open(first_file, 'rb') as f:
-                first_problem = pickle.load(f)
-            saved_env = first_problem['env_params']
-            for k, v in saved_env.items():
-                if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
-                    env_params[k] = v
-            print(f"📄 Test 데이터 env_params 적용 (from {TEST_FILE_START}.pickle)")
-        print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
+        print(f"📄 Test 데이터 env_params 적용 (from {TEST_FILE_START}.pickle)")
+    print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     
     # -----------------------------
     # 6.5) 체크포인트 env_params로 누락값 보충
@@ -521,20 +484,14 @@ if __name__ == "__main__":
         from data_generator import convert_problem_to_ga_format
 
         for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-                # 데이터 로드: val이면 배치에서 추출, test이면 개별 파일
-                if val_batch_problem is not None:
-                    problem = val_batch_problem
-                    batch_idx = i
-                    print(f"\n📋 Validation 인스턴스 {i} (배치에서 추출)")
-                else:
-                    data_path = data_base_dir / f"{i}.pickle"
-                    if not data_path.exists():
-                        print(f"⚠️  Warning: Data file not found: {data_path}")
-                        continue
-                    print(f"\n📋 테스트 파일 {i}.pickle")
-                    with open(data_path, 'rb') as fr:
-                        problem = pickle.load(fr)
-                    batch_idx = 0
+                data_path = data_base_dir / f"{i}.pickle"
+                if not data_path.exists():
+                    print(f"⚠️  Warning: Data file not found: {data_path}")
+                    continue
+                print(f"\n📋 테스트 파일 {i}.pickle")
+                with open(data_path, 'rb') as fr:
+                    problem = pickle.load(fr)
+                batch_idx = 0
 
                 start_time = time.time()
 
@@ -707,205 +664,105 @@ if __name__ == "__main__":
         
         rl_results = []
 
-        if val_batch_problem is not None:
-            # -----------------------------------------------
-            # Val 모드: 배치 전체를 한 번에 처리 (학습 validation과 동일)
-            # max_time_val 등 배치 단위 정규화가 학습과 동일하게 적용됨
-            # -----------------------------------------------
-            n_instances = TEST_FILE_END - TEST_FILE_START + 1
-            print(f"\n📋 Validation 배치 처리: {TEST_FILE_START}~{TEST_FILE_END} ({n_instances}개 인스턴스)")
-
-            # val batch에서 슬라이스 추출
-            batch_problem = {}
-            for key, value in val_batch_problem.items():
-                if isinstance(value, torch.Tensor):
-                    batch_problem[key] = value[TEST_FILE_START:TEST_FILE_END + 1]
-                elif key in ('batch_projects', 'batch_activities'):
-                    batch_problem[key] = value[TEST_FILE_START:TEST_FILE_END + 1]
-                elif key == 'env_params':
-                    batch_problem[key] = {**value, 'batch_size': n_instances, 'pomo_size': 1}
-                else:
-                    batch_problem[key] = value
-
-            batch_env_params = copy.deepcopy(env_params)
-            batch_env_params['batch_size'] = n_instances
-            batch_env_params['pomo_size'] = 1
+        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+            data_path = data_base_dir / f"{i}.pickle"
+            if not data_path.exists():
+                print(f"⚠️  Warning: Data file not found: {data_path}")
+                continue
+            print(f"\n📋 테스트 파일 {i}.pickle")
+            with open(data_path, 'rb') as fr:
+                problem = pickle.load(fr)
 
             start_time = time.time()
+
             try:
                 with torch.no_grad():
-                    test_env = SchedulingEnv(batch_env_params, debug_env=False, device='cpu')
-                    test_env._reset(batch_problem)
-
-                    if MODEL_TYPE == 'gat':
-                        action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
-                        trainer.model.set_action_space(action_to_pair, max_action_space)
+                    test_env = SchedulingEnv(env_params, debug_env=False, device='cpu')
+                    test_env._reset(problem)
 
                     done = False
                     s = test_env._get_state()
 
                     while not done:
-                        if MODEL_TYPE == 'daniel':
-                            fea_act = s.fea_act_tensor.to(device)
-                            act_mask = s.act_mask_tensor.to(device)
-                            candidate = s.candidate_tensor.to(device)
-                            fea_team = s.fea_team_tensor.to(device)
-                            team_mask = s.team_mask_tensor.to(device)
-                            comp_idx = s.comp_idx_tensor.to(device)
-                            dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
-                            fea_pairs = s.fea_pairs_tensor.to(device)
-                            pred_idx = s.pred_idx_tensor.to(device)
-                            succ_idx = s.succ_idx_tensor.to(device)
+                        fea_act = s.fea_act_tensor.to(device)
+                        act_mask = s.act_mask_tensor.to(device)
+                        candidate = s.candidate_tensor.to(device)
+                        fea_team = s.fea_team_tensor.to(device)
+                        team_mask = s.team_mask_tensor.to(device)
+                        comp_idx = s.comp_idx_tensor.to(device)
+                        dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
+                        fea_pairs = s.fea_pairs_tensor.to(device)
+                        pred_idx = s.pred_idx_tensor.to(device)
+                        succ_idx = s.succ_idx_tensor.to(device)
 
-                            pi, v = trainer.model(
-                                fea_act, act_mask, candidate, fea_team,
-                                team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                                pred_idx, succ_idx
-                            )
-                            action_flat = torch.argmax(pi, dim=1)
-                            N_T = test_env.N_T
-                            act_idx  = action_flat // N_T
-                            team_idx = action_flat % N_T
-                            s, obj_value, done = test_env.step_pair(
-                                act_idx.to(test_env.device),
-                                team_idx.to(test_env.device)
-                            )
-                        else:
-                            action = trainer.model.get_max_action(s)
-                            s, obj_value, done = test_env.step(action.to('cpu'))
+                        pi, v = trainer.model(
+                            fea_act, act_mask, candidate, fea_team,
+                            team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                            pred_idx, succ_idx
+                        )
+                        action_flat = torch.argmax(pi, dim=1)
+                        N_T = test_env.N_T
+                        act_idx  = action_flat // N_T
+                        team_idx = action_flat % N_T
+                        s, obj_value, done = test_env.step_pair(
+                            act_idx.to(test_env.device),
+                            team_idx.to(test_env.device)
+                        )
 
-                total_runtime = time.time() - start_time
-                per_instance_runtime = total_runtime / n_instances
-                all_scores = test_env._get_obj()  # (n_instances,)
+                    test_score = test_env._get_obj()
+                    if isinstance(test_score, torch.Tensor):
+                        test_score = test_score.mean().item()
 
-                for idx in range(n_instances):
-                    instance_id = TEST_FILE_START + idx
-                    test_score = all_scores[idx].item()
-                    rl_results.append({
-                        'algorithm': 'RL',
-                        'instance': instance_id,
-                        'objective_value': test_score,
-                        'runtime': per_instance_runtime,
-                    })
-                    print(f"   [RL][Instance {instance_id}] {OBJECTIVE}: {test_score:.4f}")
+                end_time = time.time()
+                runtime = end_time - start_time
 
-                print(f"   [RL] 배치 총 Runtime: {total_runtime:.4f}s (인스턴스당 평균: {per_instance_runtime:.4f}s)")
+                rl_results.append({
+                    'algorithm': 'RL',
+                    'instance': i,
+                    'objective_value': test_score,
+                    'runtime': runtime,
+                })
+                print(f"   [RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
 
-            except Exception as e:
-                print(f"   ❌ [RL][Val Batch] 실행 중 오류: {e}")
-                import traceback
-                traceback.print_exc()
-
-        else:
-            # -----------------------------------------------
-            # Test 모드: 인스턴스별 개별 처리 (파일 단위)
-            # -----------------------------------------------
-            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-                data_path = data_base_dir / f"{i}.pickle"
-                if not data_path.exists():
-                    print(f"⚠️  Warning: Data file not found: {data_path}")
-                    continue
-                print(f"\n📋 테스트 파일 {i}.pickle")
-                with open(data_path, 'rb') as fr:
-                    problem = pickle.load(fr)
-
-                start_time = time.time()
-
-                try:
-                    with torch.no_grad():
-                        test_env = SchedulingEnv(env_params, debug_env=False, device='cpu')
-                        test_env._reset(problem)
-
-                        done = False
-                        s = test_env._get_state()
-
-                        if MODEL_TYPE == 'daniel':
-                            while not done:
-                                fea_act = s.fea_act_tensor.to(device)
-                                act_mask = s.act_mask_tensor.to(device)
-                                candidate = s.candidate_tensor.to(device)
-                                fea_team = s.fea_team_tensor.to(device)
-                                team_mask = s.team_mask_tensor.to(device)
-                                comp_idx = s.comp_idx_tensor.to(device)
-                                dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
-                                fea_pairs = s.fea_pairs_tensor.to(device)
-                                pred_idx = s.pred_idx_tensor.to(device)
-                                succ_idx = s.succ_idx_tensor.to(device)
-
-                                pi, v = trainer.model(
-                                    fea_act, act_mask, candidate, fea_team,
-                                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                                    pred_idx, succ_idx
-                                )
-                                action_flat = torch.argmax(pi, dim=1)
-                                N_T = test_env.N_T
-                                act_idx  = action_flat // N_T
-                                team_idx = action_flat % N_T
-                                s, obj_value, done = test_env.step_pair(
-                                    act_idx.to(test_env.device),
-                                    team_idx.to(test_env.device)
-                                )
-                        else:
-                            action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
-                            trainer.model.set_action_space(action_to_pair, max_action_space)
-                            while not done:
-                                action = trainer.model.get_max_action(s)
-                                s, obj_value, done = test_env.step(action.to('cpu'))
-
-                        test_score = test_env._get_obj()
-                        if isinstance(test_score, torch.Tensor):
-                            test_score = test_score.mean().item()
-
-                    end_time = time.time()
-                    runtime = end_time - start_time
-
-                    rl_results.append({
-                        'algorithm': 'RL',
-                        'instance': i,
-                        'objective_value': test_score,
-                        'runtime': runtime,
-                    })
-                    print(f"   [RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
-
-                    # 간트차트 및 선후관계 그래프 생성
-                    if SAVE_GANTT_CHART:
-                        try:
-                            create_gantt_chart_from_env(
-                                env=test_env,
+                # 간트차트 및 선후관계 그래프 생성
+                if SAVE_GANTT_CHART:
+                    try:
+                        create_gantt_chart_from_env(
+                            env=test_env,
+                            instance_name=f"instance_{i}",
+                            algorithm="RL",
+                            objective_value=test_score,
+                            save_dir=gantt_dir,
+                            show=SHOW_GANTT_CHART
+                        )
+                        if i not in precedence_graphs_created:
+                            num_act = test_env.num_activities[0].item()
+                            activity_predecessors = {}
+                            activity_mutex = {}
+                            activity_to_project = {}
+                            for act_id in range(num_act):
+                                preds = test_env.activity_predecessors[0, act_id].cpu().numpy().tolist()
+                                activity_predecessors[act_id] = [p for p in preds if p >= 0]
+                                mutex = test_env.activity_mutex[0, act_id].cpu().numpy().tolist()
+                                activity_mutex[act_id] = [m for m in mutex if m >= 0]
+                                activity_to_project[act_id] = test_env.activity_project[0, act_id].item()
+                            create_precedence_graph(
+                                activity_predecessors=activity_predecessors,
+                                activity_mutex=activity_mutex,
+                                activity_to_project=activity_to_project,
                                 instance_name=f"instance_{i}",
-                                algorithm="RL",
-                                objective_value=test_score,
                                 save_dir=gantt_dir,
                                 show=SHOW_GANTT_CHART
                             )
-                            if i not in precedence_graphs_created:
-                                num_act = test_env.num_activities[0].item()
-                                activity_predecessors = {}
-                                activity_mutex = {}
-                                activity_to_project = {}
-                                for act_id in range(num_act):
-                                    preds = test_env.activity_predecessors[0, act_id].cpu().numpy().tolist()
-                                    activity_predecessors[act_id] = [p for p in preds if p >= 0]
-                                    mutex = test_env.activity_mutex[0, act_id].cpu().numpy().tolist()
-                                    activity_mutex[act_id] = [m for m in mutex if m >= 0]
-                                    activity_to_project[act_id] = test_env.activity_project[0, act_id].item()
-                                create_precedence_graph(
-                                    activity_predecessors=activity_predecessors,
-                                    activity_mutex=activity_mutex,
-                                    activity_to_project=activity_to_project,
-                                    instance_name=f"instance_{i}",
-                                    save_dir=gantt_dir,
-                                    show=SHOW_GANTT_CHART
-                                )
-                                precedence_graphs_created.add(i)
-                        except Exception as e:
-                            print(f"   ⚠️ 간트차트/그래프 생성 실패: {e}")
+                            precedence_graphs_created.add(i)
+                    except Exception as e:
+                        print(f"   ⚠️ 간트차트/그래프 생성 실패: {e}")
 
-                except Exception as e:
-                    print(f"   ❌ [RL][Instance {i}] 실행 중 오류: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
+            except Exception as e:
+                print(f"   ❌ [RL][Instance {i}] 실행 중 오류: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
         
         # RL 결과 저장
         if rl_results:

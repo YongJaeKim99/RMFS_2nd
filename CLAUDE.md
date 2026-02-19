@@ -57,21 +57,14 @@ KMP_DUPLICATE_LIB_OK=TRUE "C:\Users\YongJae\anaconda3\envs\RSS_1st\python.exe" -
 ### 알고리즘 선택 (train.py)
 
 ```python
-ALGORITHM_TYPE = 'reinforce'  # REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
-ALGORITHM_TYPE = 'ppo'        # PPO-Clip + GAE (DANIEL 전용)
+ALGORITHM_TYPE = 'reinforce'  # REINFORCE + POMO baseline
+ALGORITHM_TYPE = 'ppo'        # PPO-Clip + GAE
 ```
 
-**PPO는 반드시 `MODEL_TYPE='daniel'`이어야 합니다.** 잘못된 조합은 `train.py` 시작 시 즉시 예외를 발생시킵니다.
+### 모델
 
-### 모델 선택 (train.py, test.py 공통)
-
-```python
-MODEL_TYPE = 'gat'     # GNN(GAT) 기반 모델 → gnn_model.py
-MODEL_TYPE = 'daniel'  # Dual Attention Network → model/main_model.py
-```
-
-모델 타입에 따라 `env_params['state_mode']`(`'pyg'` 또는 `'daniel'`),
-`model_params` 구조, 환경 step 방식이 모두 자동 분기됩니다.
+DANIEL (Dual Attention Network) 모델만 사용합니다 (`model/main_model.py`).
+환경의 `state_mode`는 항상 `'daniel'`입니다.
 
 ### Reward 방식
 
@@ -86,7 +79,6 @@ REWARD_TYPE = 'stepwise'  # 매 step마다 dense reward (tardiness 전용)
 | 파일 | 역할 |
 |------|------|
 | `scheduling_env.py` | RCMPSP 환경 (DES 기반). `_reset()`, `step()`, `step_pair()`, `_get_state()` |
-| `gnn_model.py` | GAT 정책 네트워크. PyG 그래프 입력 → (activity, team) 행동 확률 출력 |
 | `model/main_model.py` | DANIEL 정책+가치 네트워크. 텐서 묶음 입력 → π, v 출력 |
 | `trainer.py` | REINFORCE/PPO 학습 루프, validation, 체크포인트 저장/로드, WandB 로깅 |
 | `ppo_utils.py` | PPO 롤아웃 버퍼(`PPOMemory`) 및 GAE advantage 계산. `transpose_data()` → `get_gae_advantages()` |
@@ -103,32 +95,22 @@ REWARD_TYPE = 'stepwise'  # 매 step마다 dense reward (tardiness 전용)
 train.py (파라미터 설정)
     └─ Scheduling_Trainer.__init__()
          ├─ SchedulingEnv(env_params)          # 환경 생성
-         ├─ DANIEL(config) 또는               # 모델 생성
-         │   SchedulingModel(model_params)
+         ├─ DANIEL(config)                     # 모델 생성
          └─ run()
               └─ REINFORCE: _train_one_batch() → train_one_minibatch()
                  PPO:        _train_ppo_one_batch()
                    ├─ env._reset(problem)      # 새 문제 로드
-                   ├─ env._get_state()         # 상태 추출
-                   │    ├─ pyg 모드: PyG Data 리스트
-                   │    └─ daniel 모드: EnvState 데이터클래스
+                   ├─ env._get_state()         # 상태 추출 → EnvState 데이터클래스
                    ├─ model.forward(state)     # 행동 확률 계산
                    ├─ Categorical(π).sample()  # 행동 샘플링
-                   ├─ env.step(action)         # GAT: action index
-                   │   env.step_pair(a, t)     # DANIEL: (activity, team) 직접
+                   ├─ env.step_pair(a, t)      # (activity, team) 직접
                    └─ REINFORCE: loss = -advantage * log_prob
                       PPO: PPOMemory → GAE → K-epoch clip update
 ```
 
-### 상태 표현의 두 가지 모드
+### 상태 표현
 
-**PyG 모드 (`state_mode='pyg'`, GAT 전용)**
-- 이종 그래프: Activity / Team / Project 노드 (모두 8차원 패딩 방식)
-- 엣지: Precedence, Mutex(is_ordered), Eligible(is_assigned), Belongs-to
-- `gnn_model.SchedulingModel.set_action_space()` 호출 필요
-
-**DANIEL 모드 (`state_mode='daniel'`)**
-- `EnvState` 데이터클래스: 8개 텐서 (`fea_act [B,N,10]`, `fea_team [B,T,8]`, `candidate [B,N]`, `comp_idx [B,T,T,N]`, `dynamic_pair_mask [B,N,T]`, `fea_pairs [B,N,T,8]`, ...)
+- `EnvState` 데이터클래스: 10개 텐서 (`fea_act [B,N,12]`, `fea_team [B,T,8]`, `candidate [B,N]`, `comp_idx [B,T,T,N]`, `dynamic_pair_mask [B,N,T]`, `fea_pairs [B,N,T,8]`, `pred_idx`, `succ_idx`, ...)
 - Action space: `N × T` (현재 후보 activity × 팀)
 - flat action index → `act_idx = action // N_T`, `team_idx = action % N_T`
 
@@ -144,7 +126,7 @@ train.py (파라미터 설정)
 
 PPO 체크포인트는 `model_old_state_dict`도 포함합니다.
 
-**test.py에서 로드 시 `MODEL_TYPE`과 `ALGORITHM_TYPE`을 학습 때와 반드시 동일하게 설정해야 합니다.**
+**test.py에서 로드 시 `ALGORITHM_TYPE`을 학습 때와 반드시 동일하게 설정해야 합니다.**
 
 ### Validation 데이터셋
 

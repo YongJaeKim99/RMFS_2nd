@@ -18,9 +18,6 @@ import copy
 from scheduling_env import SchedulingEnv
 from data_generator import generate_scheduling_data_batch
 
-# GNN 모델 import
-from gnn_model import SchedulingModel
-
 # DANIEL 모델 import
 from model.main_model import DANIEL
 
@@ -73,7 +70,7 @@ class Scheduling_Trainer:
         if mode == 'train':
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             objective = env_params.get('objective', 'tardiness')
-            model_type = trainer_params.get('model_type', 'gat').upper()
+            model_type = 'DANIEL'
             alg_label = 'PPO' if trainer_params.get('algorithm_type', 'reinforce') == 'ppo' else 'REINFORCE'
             self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{model_type}_{alg_label}"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -108,52 +105,37 @@ class Scheduling_Trainer:
         print(f"Debug ENV: {self.debug_env}, Debug Model: {self.debug_model}")
         
         # 모델 타입 설정
-        self.model_type = trainer_params.get('model_type', 'gat')
-        
-        # 모델 초기화
-        if self.model_type == 'daniel':
-            # DANIEL 모델: RCMPSP 파라미터 이름 → DANIEL 내부 이름 매핑
-            from types import SimpleNamespace
-            daniel_config = SimpleNamespace(
-                device=str(self.device),
-                # RCMPSP 이름(train.py) → DANIEL 원본 이름(model/main_model.py)
-                fea_j_input_dim=self.model_params['fea_act_input_dim'],   # activity feature dim
-                fea_m_input_dim=self.model_params['fea_team_input_dim'],  # team feature dim
-                num_heads_OAB=self.model_params['num_heads_AAB'],         # Activity Attention Block
-                num_heads_MAB=self.model_params['num_heads_TAB'],         # Team Attention Block
-                layer_fea_output_dim=self.model_params['layer_fea_output_dim'],
-                dropout_prob=self.model_params['dropout_prob'],
-                num_mlp_layers_actor=self.model_params['num_mlp_layers_actor'],
-                hidden_dim_actor=self.model_params['hidden_dim_actor'],
-                num_mlp_layers_critic=self.model_params['num_mlp_layers_critic'],
-                hidden_dim_critic=self.model_params['hidden_dim_critic'],
-            )
-            self.model = DANIEL(daniel_config).to(self.device)
-            self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
-            
-            print("✅ DANIEL 모델 초기화 완료")
-            print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
-        else:
-            # GNN (GAT) 모델
-            model_params_with_env = copy.deepcopy(self.model_params)
-            model_params_with_env['N_T'] = env_params['N_T']
-            model_params_with_env['N_P'] = env_params['N_P']
-            
-            self.model = SchedulingModel(model_params_with_env, debug_model=self.debug_model).to(self.device)
-            self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
-            
-            print("✅ GNN 모델 초기화 완료")
-            print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
+        self.model_type = 'daniel'
+
+        # DANIEL 모델 초기화: RCMPSP 파라미터 이름 → DANIEL 내부 이름 매핑
+        from types import SimpleNamespace
+        daniel_config = SimpleNamespace(
+            device=str(self.device),
+            # RCMPSP 이름(train.py) → DANIEL 원본 이름(model/main_model.py)
+            fea_j_input_dim=self.model_params['fea_act_input_dim'],   # activity feature dim
+            fea_m_input_dim=self.model_params['fea_team_input_dim'],  # team feature dim
+            num_heads_OAB=self.model_params['num_heads_AAB'],         # Activity Attention Block
+            num_heads_MAB=self.model_params['num_heads_TAB'],         # Team Attention Block
+            layer_fea_output_dim=self.model_params['layer_fea_output_dim'],
+            dropout_prob=self.model_params['dropout_prob'],
+            num_mlp_layers_actor=self.model_params['num_mlp_layers_actor'],
+            hidden_dim_actor=self.model_params['hidden_dim_actor'],
+            num_mlp_layers_critic=self.model_params['num_mlp_layers_critic'],
+            hidden_dim_critic=self.model_params['hidden_dim_critic'],
+        )
+        self.model = DANIEL(daniel_config).to(self.device)
+        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
+
+        print("✅ DANIEL 모델 초기화 완료")
+        print(f"   모델 파라미터 수: {sum(p.numel() for p in self.model.parameters()):,}")
 
         self.result_train_loss_log = []
 
         # 알고리즘 타입 설정
         self.algorithm_type = trainer_params.get('algorithm_type', 'reinforce')
 
-        # PPO 전용 초기화 (DANIEL 모델만 지원)
+        # PPO 전용 초기화
         if self.algorithm_type == 'ppo':
-            if self.model_type != 'daniel':
-                raise ValueError("PPO는 DANIEL 모델에서만 지원됩니다. MODEL_TYPE='daniel'로 설정하세요.")
             from copy import deepcopy
             from ppo_utils import PPOMemory
             self.model_old = deepcopy(self.model)
@@ -232,19 +214,12 @@ class Scheduling_Trainer:
                 "entropy_coef": self.trainer_params.get('entropy_coef', 0.0),
                 "reward_type": self.reward_type,
             }
-            # 모델별 파라미터 추가
-            if self.model_type == 'daniel':
-                config.update({
-                    "fea_act_input_dim": self.model_params.get('fea_act_input_dim'),
-                    "fea_team_input_dim": self.model_params.get('fea_team_input_dim'),
-                    "layer_fea_output_dim": self.model_params.get('layer_fea_output_dim'),
-                })
-            else:
-                config.update({
-                    "embedding_dim": self.model_params.get('embedding_dim'),
-                    "num_head": self.model_params.get('num_head'),
-                    "num_encoder_layer": self.model_params.get('num_encoder_layer'),
-                })
+            # DANIEL 모델 파라미터 추가
+            config.update({
+                "fea_act_input_dim": self.model_params.get('fea_act_input_dim'),
+                "fea_team_input_dim": self.model_params.get('fea_team_input_dim'),
+                "layer_fea_output_dim": self.model_params.get('layer_fea_output_dim'),
+            })
             
             # Wandb init 파라미터 구성
             wandb_init_kwargs = {
@@ -734,11 +709,6 @@ class Scheduling_Trainer:
         
         batch_total = self.env_params['batch_size'] * self.env_params['pomo_size']
         
-        # GAT 모드: action_to_pair 전달
-        if self.model_type == 'gat':
-            action_to_pair, max_action_space = env.action_to_pair, env.max_action_space
-            self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
-        
         done = False
         s = env._get_state()
         log_prob_tmp = torch.zeros(batch_total).to(self.device)
@@ -758,64 +728,46 @@ class Scheduling_Trainer:
 
         while not done:
             step_count += 1
-            
-            if self.model_type == 'daniel':
-                # ============================================
-                # DANIEL 모델 경로
-                # ============================================
-                # EnvState의 텐서들을 모델 device로 이동
-                fea_act = s.fea_act_tensor.to(self.device)
-                act_mask = s.act_mask_tensor.to(self.device)
-                candidate = s.candidate_tensor.to(self.device)
-                fea_team = s.fea_team_tensor.to(self.device)
-                team_mask = s.team_mask_tensor.to(self.device)
-                comp_idx = s.comp_idx_tensor.to(self.device)
-                dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
-                fea_pairs = s.fea_pairs_tensor.to(self.device)
-                pred_idx = s.pred_idx_tensor.to(self.device)
-                succ_idx = s.succ_idx_tensor.to(self.device)
 
-                # DANIEL forward: (pi, v)
-                pi, v = self.model(
-                    fea_act, act_mask, candidate, fea_team,
-                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                    pred_idx, succ_idx
-                )
-                
-                # Action 샘플링
-                dist = Categorical(pi)
-                action_flat = dist.sample()  # (B,) — index in [0, P*T)
-                log_prob = dist.log_prob(action_flat)
-                entropy = dist.entropy()
-                
-                log_prob_tmp += log_prob
-                if use_entropy:
-                    cumulative_entropy += entropy
-                
-                # Action 변환: flat index → (activity, team)
-                N_T = env.N_T
-                act_idx  = action_flat // N_T  # (B,) — 직접 activity index
-                team_idx = action_flat % N_T   # (B,)
+            # EnvState의 텐서들을 모델 device로 이동
+            fea_act = s.fea_act_tensor.to(self.device)
+            act_mask = s.act_mask_tensor.to(self.device)
+            candidate = s.candidate_tensor.to(self.device)
+            fea_team = s.fea_team_tensor.to(self.device)
+            team_mask = s.team_mask_tensor.to(self.device)
+            comp_idx = s.comp_idx_tensor.to(self.device)
+            dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
+            fea_pairs = s.fea_pairs_tensor.to(self.device)
+            pred_idx = s.pred_idx_tensor.to(self.device)
+            succ_idx = s.succ_idx_tensor.to(self.device)
 
-                # 환경 step (activity, team 쌍으로 직접)
-                s, obj_value, done = env.step_pair(
-                    act_idx.to(env.device),
-                    team_idx.to(env.device)
-                )
-            else:
-                # ============================================
-                # GAT (GNN) 모델 경로 (기존 코드)
-                # ============================================
-                action, log_prob, entropy = self.model.get_action(s)
-                log_prob_tmp += log_prob
-                if use_entropy:
-                    cumulative_entropy += entropy
-                
-                # device_mode에 따라 action을 환경 device로 이동
-                if self.device_mode == 'gpu':
-                    s, obj_value, done = env.step(action)
-                else:
-                    s, obj_value, done = env.step(action.to('cpu'))
+            # DANIEL forward: (pi, v)
+            pi, v = self.model(
+                fea_act, act_mask, candidate, fea_team,
+                team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                pred_idx, succ_idx
+            )
+
+            # Action 샘플링
+            dist = Categorical(pi)
+            action_flat = dist.sample()  # (B,) — index in [0, P*T)
+            log_prob = dist.log_prob(action_flat)
+            entropy = dist.entropy()
+
+            log_prob_tmp += log_prob
+            if use_entropy:
+                cumulative_entropy += entropy
+
+            # Action 변환: flat index → (activity, team)
+            N_T = env.N_T
+            act_idx  = action_flat // N_T  # (B,) — 직접 activity index
+            team_idx = action_flat % N_T   # (B,)
+
+            # 환경 step (activity, team 쌍으로 직접)
+            s, obj_value, done = env.step_pair(
+                act_idx.to(env.device),
+                team_idx.to(env.device)
+            )
 
             # Step-wise reward 누적 (REINFORCE: 에피소드 전체 합을 최종 reward로 사용)
             if self.reward_type == 'stepwise':
@@ -1290,50 +1242,39 @@ class Scheduling_Trainer:
         val_env = SchedulingEnv(val_env_params, debug_env=False, device=env_device)
         val_env._reset(problem)
 
-        if self.model_type == 'gat':
-            action_to_pair, max_action_space = val_env.action_to_pair, val_env.max_action_space
-            self.model.set_action_space(action_to_pair.to(self.device), max_action_space)
-
         done = False
         s = val_env._get_state()
 
         with torch.no_grad():
             while not done:
-                if self.model_type == 'daniel':
-                    fea_act = s.fea_act_tensor.to(self.device)
-                    act_mask = s.act_mask_tensor.to(self.device)
-                    candidate = s.candidate_tensor.to(self.device)
-                    fea_team = s.fea_team_tensor.to(self.device)
-                    team_mask = s.team_mask_tensor.to(self.device)
-                    comp_idx = s.comp_idx_tensor.to(self.device)
-                    dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
-                    fea_pairs = s.fea_pairs_tensor.to(self.device)
-                    pred_idx = s.pred_idx_tensor.to(self.device)
-                    succ_idx = s.succ_idx_tensor.to(self.device)
+                fea_act = s.fea_act_tensor.to(self.device)
+                act_mask = s.act_mask_tensor.to(self.device)
+                candidate = s.candidate_tensor.to(self.device)
+                fea_team = s.fea_team_tensor.to(self.device)
+                team_mask = s.team_mask_tensor.to(self.device)
+                comp_idx = s.comp_idx_tensor.to(self.device)
+                dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(self.device)
+                fea_pairs = s.fea_pairs_tensor.to(self.device)
+                pred_idx = s.pred_idx_tensor.to(self.device)
+                succ_idx = s.succ_idx_tensor.to(self.device)
 
-                    pi, v = self.model(
-                        fea_act, act_mask, candidate, fea_team,
-                        team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                        pred_idx, succ_idx
-                    )
+                pi, v = self.model(
+                    fea_act, act_mask, candidate, fea_team,
+                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                    pred_idx, succ_idx
+                )
 
-                    # Greedy: argmax
-                    action_flat = torch.argmax(pi, dim=1)
+                # Greedy: argmax
+                action_flat = torch.argmax(pi, dim=1)
 
-                    N_T = val_env.N_T
-                    act_idx  = action_flat // N_T
-                    team_idx = action_flat % N_T
+                N_T = val_env.N_T
+                act_idx  = action_flat // N_T
+                team_idx = action_flat % N_T
 
-                    s, obj_value, done = val_env.step_pair(
-                        act_idx.to(val_env.device),
-                        team_idx.to(val_env.device)
-                    )
-                else:
-                    action = self.model.get_max_action(s)
-                    if self.device_mode == 'gpu':
-                        s, obj_value, done = val_env.step(action)
-                    else:
-                        s, obj_value, done = val_env.step(action.to('cpu'))
+                s, obj_value, done = val_env.step_pair(
+                    act_idx.to(val_env.device),
+                    team_idx.to(val_env.device)
+                )
 
         # 배치 전체 목적함수값 계산 → 평균
         obj_values = val_env._get_obj()  # (batch_total,)

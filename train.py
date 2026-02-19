@@ -16,16 +16,8 @@ if __name__ == "__main__":
     # 'reinforce': REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
     # 'ppo':       PPO-Clip + GAE (DANIEL 전용, 논문 알고리즘)
 
-    # 모델 선택 옵션
-    MODEL_TYPE = 'daniel'  # 'gat': 기존 GNN(GAT) 모델, 'daniel': DANIEL 모델
-    # ※ PPO는 반드시 MODEL_TYPE='daniel' 이어야 합니다.
-
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
-
-    # PPO + 잘못된 모델 타입 조합 사전 차단
-    if ALGORITHM_TYPE == 'ppo' and MODEL_TYPE != 'daniel':
-        raise ValueError("PPO는 DANIEL 모델에서만 지원됩니다. MODEL_TYPE='daniel'로 설정하세요.")
 
     # ------------------------------------------------------------------
     # 알고리즘별 기본 하이퍼파라미터 (논문 값 기준)
@@ -79,7 +71,7 @@ if __name__ == "__main__":
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
 
     # Wandb 옵션
-    USE_WANDB = True    # ← 동작 확인용 (원래: True)
+    USE_WANDB = False    # ← 동작 확인용 (원래: True)
     WANDB_PROJECT = "RCMPSP"
     WANDB_RUN_NAME = None
     WANDB_RUN_ID = None
@@ -168,7 +160,7 @@ if __name__ == "__main__":
          'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
          'objective': OBJECTIVE,
          'debug_env': DEBUG_ENV,
-         'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
+         'state_mode': 'daniel',
          'step_log': STEP_PROGRESS_LOG,
          'allow_wait_release': ALLOW_WAIT_RELEASE,
          'allow_wait_mutex': ALLOW_WAIT_MUTEX,
@@ -197,47 +189,37 @@ if __name__ == "__main__":
         'debug_env': DEBUG_ENV,
     }
     '''
-    # 모델 파라미터 설정
-    if MODEL_TYPE == 'gat':
-        model_params = {
-            'embedding_dim': 128,
-            'num_head': 8,
-            'num_encoder_layer': 3,
-            'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
-        }
-    elif MODEL_TYPE == 'daniel':
-         # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
-        model_params = {
-             'fea_act_input_dim': 12,
-             'fea_team_input_dim': 8,
-             'num_heads_AAB': [4, 4],
-             'num_heads_TAB': [4, 4],
-             'layer_fea_output_dim': [32, 8],
-             'dropout_prob': 0.0,
-             'num_mlp_layers_actor': 3,
-             'hidden_dim_actor': 64,
-             'num_mlp_layers_critic': 3,
-             'hidden_dim_critic': 64,
-        }
-        # 큰 사이즈 파라미터 (~300K params)
-        '''
-        model_params = {
-            # DAN (Dual Attention Network) 파라미터
-            'fea_act_input_dim': 12,    # Activity 피처 차원 (env 출력과 일치)
-            'fea_team_input_dim': 8,    # Team 피처 차원 (env 출력과 일치)
-            'num_heads_AAB': [8, 8, 8],    # Activity Attention Block 헤드 수 (3층)
-            'num_heads_TAB': [8, 8, 8],    # Team Attention Block 헤드 수 (3층)
-            'layer_fea_output_dim': [128, 64, 32],  # DAN 레이어 출력 차원 (3층)
-            'dropout_prob': 0.0,
-            # Actor-Critic MLP 파라미터
-            'num_mlp_layers_actor': 3,
-            'hidden_dim_actor': 256,
-            'num_mlp_layers_critic': 3,
-            'hidden_dim_critic': 256,
-        }
-        '''
-    else:
-        raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Use 'gat' or 'daniel'.")
+    # 모델 파라미터 설정 (DANIEL)
+    # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
+    model_params = {
+         'fea_act_input_dim': 12,
+         'fea_team_input_dim': 8,
+         'num_heads_AAB': [4, 4],
+         'num_heads_TAB': [4, 4],
+         'layer_fea_output_dim': [32, 8],
+         'dropout_prob': 0.0,
+         'num_mlp_layers_actor': 3,
+         'hidden_dim_actor': 64,
+         'num_mlp_layers_critic': 3,
+         'hidden_dim_critic': 64,
+    }
+    # 큰 사이즈 파라미터 (~300K params)
+    '''
+    model_params = {
+        # DAN (Dual Attention Network) 파라미터
+        'fea_act_input_dim': 12,    # Activity 피처 차원 (env 출력과 일치)
+        'fea_team_input_dim': 8,    # Team 피처 차원 (env 출력과 일치)
+        'num_heads_AAB': [8, 8, 8],    # Activity Attention Block 헤드 수 (3층)
+        'num_heads_TAB': [8, 8, 8],    # Team Attention Block 헤드 수 (3층)
+        'layer_fea_output_dim': [128, 64, 32],  # DAN 레이어 출력 차원 (3층)
+        'dropout_prob': 0.0,
+        # Actor-Critic MLP 파라미터
+        'num_mlp_layers_actor': 3,
+        'hidden_dim_actor': 256,
+        'num_mlp_layers_critic': 3,
+        'hidden_dim_critic': 256,
+    }
+    '''
 
     # 트레이너 파라미터 설정
     trainer_params = {
@@ -267,7 +249,7 @@ if __name__ == "__main__":
         'validation_pomo_size': VALIDATION_POMO_SIZE,
         'resume_from_checkpoint': RESUME_FROM_CHECKPOINT,
         'resume_training': RESUME_TRAINING,
-        'model_type': MODEL_TYPE,
+        'model_type': 'daniel',
         # 알고리즘 타입
         'algorithm_type': ALGORITHM_TYPE,
         # PPO 전용 파라미터 (REINFORCE 시에도 전달되지만 무시됨)
@@ -298,7 +280,7 @@ if __name__ == "__main__":
         print(f"  └─ eps_clip={PPO_EPS_CLIP}, k_epochs={PPO_K_EPOCHS}, gae_lambda={PPO_GAE_LAMBDA}")
         print(f"  └─ gamma={PPO_GAMMA}, vloss_coef={PPO_VLOSS_COEF}, ploss_coef={PPO_PLOSS_COEF}")
         print(f"  └─ n_resample={N_RESAMPLE}, ppo_minibatch_size={PPO_MINIBATCH_SIZE}, tau={PPO_TAU}")
-    print(f"Model: {MODEL_TYPE.upper()}")
+    print(f"Model: DANIEL")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")

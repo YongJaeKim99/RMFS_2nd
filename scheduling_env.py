@@ -6,7 +6,6 @@ MDP Action: 현재 시작 가능한 (Activity, Team) 페어 선택
 
 import torch
 import torch.nn.functional as F
-from torch_geometric.data import Data, Batch
 import numpy as np
 import copy
 from typing import List, Dict, Tuple, Optional
@@ -80,8 +79,8 @@ class SchedulingEnv:
         # 목적함수
         self.objective = env_params.get('objective', 'tardiness')  # 'tardiness' or 'makespan'
         
-        # 상태 출력 모드: 'pyg' (GNN 모델) 또는 'daniel' (DANIEL 모델)
-        self.state_mode = env_params.get('state_mode', 'pyg')
+        # 상태 출력 모드 (DANIEL 모델)
+        self.state_mode = 'daniel'
 
         # Wait 옵션: release time / mutex로 즉시 실행 불가해도 기다려서 스케줄 허용
         self.allow_wait_release = env_params.get('allow_wait_release', False)
@@ -188,9 +187,6 @@ class SchedulingEnv:
         # Action space 초기화: eligible한 (activity, team) 조합만 고려
         self._initialize_action_space()
         
-        # Static edge 사전 구축 (PyG 모드에서 사용)
-        self._precompute_static_edges()
-        
         # (batch_size, max_action_space) - 가능한 action은 True
         self.available_actions = torch.zeros(self.batch_size, self.max_action_space, dtype=torch.bool, device=self.device)        
         
@@ -256,112 +252,6 @@ class SchedulingEnv:
         # Scatter into action_to_pair
         self.action_to_pair[batch_idx, seq_idx, 0] = act_ids
         self.action_to_pair[batch_idx, seq_idx, 1] = team_ids
-    
-    def _precompute_static_edges(self):
-        """
-        _reset() 시점에 static 그래프 구조(edge_index, edge_type)를 사전 구축.
-        에피소드 중 변하지 않는 엣지 구조를 미리 계산하여 _get_state_pyg()에서 재사용.
-        
-        각 배치별로 다음 엣지 타입을 사전 구축:
-            0 = Precedence (pred -> act, 단방향)
-            1 = Mutex (act <-> act, 양방향)
-            2 = Eligible (act <-> team, 양방향)
-            3 = Belongs-to (act <-> project, 양방향)
-        """
-        B = self.batch_size
-        self.static_edges = []
-        
-        for b in range(B):
-            num_act = self.num_activities[b].item()
-            edges_src = []
-            edges_dst = []
-            edge_types = []  # 0=precedence, 1=mutex, 2=eligible, 3=belongs_to
-            
-            # --- 동적 edge_attr 계산을 위한 메타데이터 ---
-            mutex_act1_list = []
-            mutex_act2_list = []
-            eligible_act_list = []
-            eligible_team_list = []
-            
-            # 1. Precedence edges: pred_id -> act_id (단방향)
-            preds = self.activity_predecessors[b, :num_act]  # (num_act, max_preds)
-            valid_pred = preds >= 0
-            act_coords, slot_coords = valid_pred.nonzero(as_tuple=True)
-            if len(act_coords) > 0:
-                pred_ids = preds[act_coords, slot_coords]
-                in_range = pred_ids < num_act
-                if in_range.any():
-                    src = pred_ids[in_range]
-                    dst = act_coords[in_range]
-                    edges_src.append(src)
-                    edges_dst.append(dst)
-                    edge_types.append(torch.zeros(len(src), dtype=torch.long, device=self.device))
-            
-            # 2. Mutex edges: 양방향 (deduplicated by act1 < act2)
-            mutex_data = self.activity_mutex[b, :num_act]  # (num_act, max_mutex)
-            valid_mutex = mutex_data >= 0
-            act_coords_m, slot_coords_m = valid_mutex.nonzero(as_tuple=True)
-            if len(act_coords_m) > 0:
-                mutex_ids = mutex_data[act_coords_m, slot_coords_m]
-                dedup = (mutex_ids > act_coords_m) & (mutex_ids < num_act)
-                if dedup.any():
-                    a1 = act_coords_m[dedup]
-                    a2 = mutex_ids[dedup]
-                    edges_src.append(torch.cat([a1, a2]))
-                    edges_dst.append(torch.cat([a2, a1]))
-                    n_pairs = dedup.sum().item()
-                    edge_types.append(torch.ones(n_pairs * 2, dtype=torch.long, device=self.device))
-                    mutex_act1_list.append(torch.cat([a1, a2]))
-                    mutex_act2_list.append(torch.cat([a2, a1]))
-            
-            # 3. Eligible edges: 양방향 (act <-> team_node)
-            elig = self.activity_eligible_teams[b, :num_act]  # (num_act, N_T)
-            act_coords_e, team_coords_e = elig.nonzero(as_tuple=True)
-            if len(act_coords_e) > 0:
-                team_node_ids = (num_act + team_coords_e).long()
-                edges_src.append(torch.cat([act_coords_e, team_node_ids]))
-                edges_dst.append(torch.cat([team_node_ids, act_coords_e]))
-                n_elig = len(act_coords_e) * 2
-                edge_types.append(torch.full((n_elig,), 2, dtype=torch.long, device=self.device))
-                eligible_act_list.append(torch.cat([act_coords_e, act_coords_e]))
-                eligible_team_list.append(torch.cat([team_coords_e, team_coords_e]))
-            
-            # 4. Belongs-to edges: 양방향 (act <-> proj_node)
-            proj_ids = self.activity_project[b, :num_act]  # (num_act,)
-            act_ids_bt = torch.arange(num_act, device=self.device)
-            proj_node_ids = (num_act + self.N_T + proj_ids).long()
-            edges_src.append(torch.cat([act_ids_bt, proj_node_ids]))
-            edges_dst.append(torch.cat([proj_node_ids, act_ids_bt]))
-            edge_types.append(torch.full((num_act * 2,), 3, dtype=torch.long, device=self.device))
-            
-            # Concatenate all edges
-            if edges_src:
-                all_src = torch.cat(edges_src)
-                all_dst = torch.cat(edges_dst)
-                edge_index = torch.stack([all_src, all_dst], dim=0).long()  # (2, E)
-                edge_type = torch.cat(edge_types)  # (E,)
-            else:
-                edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
-                edge_type = torch.empty(0, dtype=torch.long, device=self.device)
-            
-            # Mutex metadata
-            mutex_act1 = torch.cat(mutex_act1_list) if mutex_act1_list else torch.empty(0, dtype=torch.long, device=self.device)
-            mutex_act2 = torch.cat(mutex_act2_list) if mutex_act2_list else torch.empty(0, dtype=torch.long, device=self.device)
-            
-            # Eligible metadata
-            eligible_act = torch.cat(eligible_act_list) if eligible_act_list else torch.empty(0, dtype=torch.long, device=self.device)
-            eligible_team = torch.cat(eligible_team_list) if eligible_team_list else torch.empty(0, dtype=torch.long, device=self.device)
-            
-            self.static_edges.append({
-                'edge_index': edge_index,
-                'edge_type': edge_type,
-                'num_nodes': num_act + self.N_T + self.N_P,
-                'num_act': num_act,
-                'mutex_act1': mutex_act1,
-                'mutex_act2': mutex_act2,
-                'eligible_act': eligible_act,
-                'eligible_team': eligible_team,
-            })
     
     def _update_available_actions(self, batch_idxs):
         """
@@ -706,7 +596,7 @@ class SchedulingEnv:
                 break
             
             advance_idxs = batch_idxs[needs_advance]
-            self._advance_to_next_decision_event_for_batches(advance_idxs)
+            self._advance_to_next_decision_event(advance_idxs)
             self._update_available_actions(advance_idxs)
         
         # 최대 반복 도달 시 디버그 출력
@@ -718,7 +608,7 @@ class SchedulingEnv:
         
         return final_all_done
 
-    def _advance_to_next_decision_event_for_batches(self, batch_idxs):
+    def _advance_to_next_decision_event(self, batch_idxs):
         """
         지정된 배치들에서 시간을 다음 이벤트까지 진행하고 완료된 activity 처리 (벡터 연산)
         
@@ -956,109 +846,13 @@ class SchedulingEnv:
     
     def _get_state(self):
         """
-        현재 상태를 모델 입력 형태로 반환
-        self.state_mode에 따라 PyG 또는 DANIEL 형태로 출력
-        
+        현재 상태를 DANIEL 모델 입력 형태로 반환
+
         Returns:
-            state: 모델 입력 형태의 상태 (mode에 따라 다름)
+            state: EnvState 데이터클래스
         """
-        if self.state_mode == 'daniel':
-            return self._get_state_daniel()
-        else:
-            return self._get_state_pyg()
-    
-    def _get_state_pyg(self):
-        """
-        현재 상태를 PyG (Graph) 입력 형태로 반환 (GNN 모델용)
-        노드 피처는 텐서 슬라이싱으로 구성 (for문 없음), 엣지는 사전 계산된 static edge 재사용
-        
-        Returns:
-            state: List of PyG Data objects (배치별로 하나씩)
-        """
-        state_list = []
-        
-        # 정규화용 상수 (배치 전체 한번에)
-        max_duration = self.duration_max
-        max_times = torch.clamp(self.sim_time + 1.0, min=1.0)  # (B,)
-        max_release = self.project_release_time.max(dim=1)[0].clamp(min=1.0)  # (B,)
-        max_due = self.project_due_date.max(dim=1)[0].clamp(min=1.0)  # (B,)
-        
-        for b in range(self.batch_size):
-            info = self.static_edges[b]
-            num_act = info['num_act']
-            num_nodes = info['num_nodes']
-            edge_index = info['edge_index']
-            edge_type = info['edge_type']
-            
-            # ========================================
-            # 노드 피처 구성 (텐서 슬라이싱 -- for문 없음)
-            # ========================================
-            # 전체 노드 피처: 8차원
-            # Activity [0:4]: duration, started, ended, remaining_time
-            # Team [4]: available_time
-            # Project [5:8]: remaining_release, remaining_due, completed
-            node_features = torch.zeros(num_nodes, 8, device=self.device)
-            
-            # Activity 노드 [0:num_act]
-            node_features[:num_act, 0] = self.activity_duration[b, :num_act] / max_duration
-            node_features[:num_act, 1] = self.activity_started[b, :num_act].float()
-            node_features[:num_act, 2] = self.activity_ended[b, :num_act].float()
-            node_features[:num_act, 3] = self.activity_remaining_time[b, :num_act] / max_duration
-            
-            # Team 노드 [num_act:num_act+N_T]
-            node_features[num_act:num_act + self.N_T, 4] = (
-                self.team_available_time[b] / max_times[b]
-            )
-            
-            # Project 노드 [num_act+N_T:num_act+N_T+N_P]
-            current_time = self.sim_time[b]
-            proj_start = num_act + self.N_T
-            remaining_release = torch.clamp(self.project_release_time[b] - current_time, min=0.0)
-            remaining_due = torch.clamp(self.project_due_date[b] - current_time, min=0.0)
-            node_features[proj_start:proj_start + self.N_P, 5] = remaining_release / max_release[b]
-            node_features[proj_start:proj_start + self.N_P, 6] = remaining_due / max_due[b]
-            node_features[proj_start:proj_start + self.N_P, 7] = self.project_completed[b].float()
-            
-            # ========================================
-            # 엣지 속성 (dynamic) 계산 -- static edge 재사용
-            # ========================================
-            num_edges = edge_index.shape[1]
-            edge_attr = torch.zeros(num_edges, 1, device=self.device)
-            
-            # Mutex edges: is_ordered (둘 중 하나가 started이면 1)
-            mutex_mask = (edge_type == 1)
-            if mutex_mask.any():
-                ma1 = info['mutex_act1']
-                ma2 = info['mutex_act2']
-                is_ordered = (
-                    self.activity_started[b, ma1] | self.activity_started[b, ma2]
-                ).float()
-                edge_attr[mutex_mask, 0] = is_ordered
-            
-            # Eligible edges: is_assigned (activity가 해당 team에 할당되었으면 1)
-            elig_mask = (edge_type == 2)
-            if elig_mask.any():
-                ea = info['eligible_act']
-                et = info['eligible_team']
-                is_assigned = (self.activity_assigned_team[b, ea] == et).float()
-                edge_attr[elig_mask, 0] = is_assigned
-            
-            # ========================================
-            # PyG Data 객체 생성
-            # ========================================
-            data = Data(
-                x=node_features,
-                edge_index=edge_index,
-                edge_attr=edge_attr,
-                mask=self.available_actions[b],
-                batch_idx=b,
-                num_activities=num_act,
-                sim_time=self.sim_time[b].item()
-            )
-            state_list.append(data)
-        
-        return state_list
-    
+        return self._get_state_daniel()
+
     def _get_state_daniel(self):
         """
         현재 상태를 DANIEL 모델 입력 형태로 반환 (완전 벡터화)
