@@ -1,0 +1,62 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 3823.1799, time: 1.74s
+  💾 체크포인트 저장: ./checkpoints/20260219_160705_tardiness_DANIEL_PPO\epoch0.pt
+epoch: 1
+epoch: 1, loss: 4551718.3750, reward: -4615.3335, tardiness: 4615.3335, time: 1.15s
+epoch: 2
+epoch: 2, loss: 4162384.1250, reward: -4419.6665, tardiness: 4419.6665, time: 1.22s
+epoch: 3
+epoch: 3, loss: 4858815.1250, reward: -4761.6665, tardiness: 4761.6665, time: 1.08s
+epoch: 4
+epoch: 4, loss: 4664840.3750, reward: -4659.0000, tardiness: 4659.0000, time: 1.18s
+epoch: 5
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\train.py", line 343, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\trainer.py", line 324, in run
+    train_loss_avg, train_reward_avg = self._train_ppo_one_batch(ppo_problem)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\trainer.py", line 547, in _train_ppo_one_batch
+    pi, v = self.model(
+            ^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\model\main_model.py", line 187, in forward
+    fea_j, fea_m, fea_j_global, fea_m_global = self.feature_exact(
+                                               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\model\main_model.py", line 122, in forward
+    fea_j = self.op_attention_blocks[layer](fea_j, op_mask, pred_idx, succ_idx)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\model\attention_layer.py", line 129, in forward
+    h_heads = [att(h, op_mask, pred_idx, succ_idx) for att in self.attentions]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\model\attention_layer.py", line 71, in forward
+    pred_agg = inner_attend(pred_idx)   # (B, N, D)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\Project\Samsung_DS\Code\model\attention_layer.py", line 62, in inner_attend
+    e = e.masked_fill(~valid.unsqueeze(-1), -9e15)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

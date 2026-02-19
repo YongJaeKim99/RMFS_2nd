@@ -71,7 +71,7 @@ if __name__ == "__main__":
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
 
     # Wandb 옵션
-    USE_WANDB = False    # ← 동작 확인용 (원래: True)
+    USE_WANDB = True    # ← 동작 확인용 (원래: True)
     WANDB_PROJECT = "RCMPSP"
     WANDB_RUN_NAME = None
     WANDB_RUN_ID = None
