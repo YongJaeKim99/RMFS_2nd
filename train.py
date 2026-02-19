@@ -32,7 +32,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS                = 1000       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 128       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        BATCH_SIZE            = 3       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 20         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
@@ -44,9 +44,9 @@ if __name__ == "__main__":
         NORMALIZE_ADVANTAGE = False        # GAE 내부에서 정규화
     else:  # 'reinforce'
         EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
-        BATCH_SIZE            = 8
-        POMO_SIZE             = 8
-        VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
+        BATCH_SIZE            = 3
+        POMO_SIZE             = 2
+        VALIDATION_INTERVAL   = 20          # ← 매 epoch 확인 (원래: 5)
         VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-5, 'weight_decay': 1e-6}}

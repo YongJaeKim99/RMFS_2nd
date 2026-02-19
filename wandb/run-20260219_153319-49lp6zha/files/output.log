@@ -1,0 +1,105 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 2791.2400, time: 2.02s
+  💾 체크포인트 저장: ./checkpoints/20260219_153318_tardiness_DANIEL_PPO\epoch0.pt
+epoch: 1
+epoch: 1, loss: 4961135.3750, reward: -4794.0000, tardiness: 4794.0000, time: 1.09s
+epoch: 2
+epoch: 2, loss: 5923413.6250, reward: -5227.0000, tardiness: 5227.0000, time: 0.98s
+epoch: 3
+epoch: 3, loss: 4425336.7500, reward: -4554.3335, tardiness: 4554.3335, time: 1.01s
+epoch: 4
+epoch: 4, loss: 7586204.2500, reward: -5829.6665, tardiness: 5829.6665, time: 1.02s
+epoch: 5
+epoch: 5, loss: 4790888.0000, reward: -4720.6665, tardiness: 4720.6665, time: 1.02s
+epoch: 6
+epoch: 6, loss: 8482428.2500, reward: -6212.0000, tardiness: 6212.0000, time: 1.10s
+epoch: 7
+epoch: 7, loss: 6607427.1250, reward: -5537.6665, tardiness: 5537.6665, time: 0.98s
+epoch: 8
+epoch: 8, loss: 6479391.6250, reward: -5473.0000, tardiness: 5473.0000, time: 1.08s
+epoch: 9
+epoch: 9, loss: 10012259.2500, reward: -6835.0000, tardiness: 6835.0000, time: 1.09s
+epoch: 10
+epoch: 10, loss: 7727295.7500, reward: -6005.3335, tardiness: 6005.3335, time: 1.23s
+epoch: 11
+epoch: 11, loss: 8551582.5000, reward: -6268.0000, tardiness: 6268.0000, time: 1.12s
+epoch: 12
+epoch: 12, loss: 7142367.7500, reward: -5749.0000, tardiness: 5749.0000, time: 1.16s
+epoch: 13
+epoch: 13, loss: 7577152.6250, reward: -5795.3335, tardiness: 5795.3335, time: 0.99s
+epoch: 14
+epoch: 14, loss: 5818379.3750, reward: -5159.0000, tardiness: 5159.0000, time: 0.97s
+epoch: 15
+epoch: 15, loss: 8922555.7500, reward: -6470.3335, tardiness: 6470.3335, time: 0.99s
+epoch: 16
+epoch: 16, loss: 9483050.2500, reward: -6665.6665, tardiness: 6665.6665, time: 1.02s
+epoch: 17
+epoch: 17, loss: 5202518.3750, reward: -4896.0000, tardiness: 4896.0000, time: 1.02s
+epoch: 18
+epoch: 18, loss: 8027576.2500, reward: -5913.3335, tardiness: 5913.3335, time: 1.03s
+epoch: 19
+epoch: 19, loss: 5227959.0000, reward: -4945.3335, tardiness: 4945.3335, time: 1.13s
+epoch: 20
+epoch: 20, loss: 6705706.2500, reward: -5588.3335, tardiness: 5588.3335, time: 1.15s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 9412.8604 (-237.23%), time: 1.93s
+  💾 체크포인트 저장: ./checkpoints/20260219_153318_tardiness_DANIEL_PPO\epoch20.pt
+epoch: 21
+epoch: 21, loss: 4410287.1250, reward: -4498.3335, tardiness: 4498.3335, time: 0.97s
+epoch: 22
+epoch: 22, loss: 5261743.5000, reward: -4910.0000, tardiness: 4910.0000, time: 1.00s
+epoch: 23
+epoch: 23, loss: 4294126.8750, reward: -4450.0000, tardiness: 4450.0000, time: 1.11s
+epoch: 24
+epoch: 24, loss: 4756314.3750, reward: -4607.0000, tardiness: 4607.0000, time: 1.08s
+epoch: 25
+Traceback (most recent call last):
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\train.py", line 361, in <module>
+    trainer.run()
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 349, in run
+    train_loss_avg, train_reward_avg = self._train_ppo_one_batch(ppo_problem)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\trainer.py", line 650, in _train_ppo_one_batch
+    pi_new, v_new = self.model(
+                    ^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 187, in forward
+    fea_j, fea_m, fea_j_global, fea_m_global = self.feature_exact(
+                                               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\main_model.py", line 122, in forward
+    fea_j = self.op_attention_blocks[layer](fea_j, op_mask, pred_idx, succ_idx)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 129, in forward
+    h_heads = [att(h, op_mask, pred_idx, succ_idx) for att in self.attentions]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\YongJae\anaconda3\envs\RSS_1st\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 72, in forward
+    succ_agg = inner_attend(succ_idx)   # (B, N, D)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\YongJae\Desktop\프로젝트\삼전DS 전략산학\Code\model\attention_layer.py", line 53, in inner_attend
+    nbr_emb = torch.gather(
+              ^^^^^^^^^^^^^
+KeyboardInterrupt

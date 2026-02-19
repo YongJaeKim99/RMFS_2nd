@@ -9,6 +9,7 @@ from datetime import datetime
 import time
 import pickle
 import random
+import copy
 
 from trainer import Scheduling_Trainer
 from scheduling_env import SchedulingEnv
@@ -37,11 +38,11 @@ if __name__ == "__main__":
     # 체크포인트 폴더 이름 (checkpoints/ 아래의 폴더명)
     # 예: "20260210_130751_tardiness_REINFORCE"
     #CHECKPOINT_FOLDER = "20260210_175204_tardiness_REINFORCE"
-    CHECKPOINT_FOLDER = "best"
+    CHECKPOINT_FOLDER = "20260219_151324_tardiness_DANIEL_PPO"
     
     # 특정 체크포인트 파일 이름 (None이면 자동 선택)
     # 예: "scheduling_epoch100.pt" 또는 None
-    CHECKPOINT_FILE = "best_model.pt"
+    CHECKPOINT_FILE = "epoch0.pt"
     
     # 모든 체크포인트에 대해 실험할지 여부
     # True: 폴더 내 모든 체크포인트 테스트
@@ -51,7 +52,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 2) 모델 타입 설정
     # -----------------------------
-    MODEL_TYPE = 'gat'  # 'gat': GNN(GAT) 모델, 'daniel': DANIEL 모델
+    MODEL_TYPE = 'daniel'  # 'gat': GNN(GAT) 모델, 'daniel': DANIEL 모델
 
     # -----------------------------
     # 2-1) 학습 알고리즘 설정 (체크포인트와 일치해야 함)
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     # -----------------------------
     # RL: 학습된 GNN 모델 사용
     # GA: 유전 알고리즘 (GA.py)
-    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
     
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -78,6 +79,8 @@ if __name__ == "__main__":
     #GA_MUTEX_MODE = "wait"     # "wait": mutex 끝날 때까지 기다림, "skip": 진행 중이면 건너뜀
     GA_MUTEX_MODE = "wait"
     GA_VERBOSE = False  # True: 세대별 진행상황 출력, False: 최종 결과만
+    GA_DOMINANCE_RULE = True  # True: wait으로 인한 idle time에 즉시 수행 가능 activity가 있으면 해당 pair skip
+    #   ※ release_mode="wait" 또는 mutex_mode="wait" 일 때만 유효 (RL의 DOMINANCE_RULE 대응)
     
     # -----------------------------
     # 간트차트 생성 설정
@@ -111,9 +114,9 @@ if __name__ == "__main__":
     # 3) 기타 설정
     # -----------------------------
     # Wait / Dominance 옵션
-    ALLOW_WAIT_RELEASE = False
-    ALLOW_WAIT_MUTEX = False
-    DOMINANCE_RULE = False
+    ALLOW_WAIT_RELEASE = True
+    ALLOW_WAIT_MUTEX = True
+    DOMINANCE_RULE = True
 
     # 디버그 모드 설정
     DEBUG_ENV = False
@@ -147,6 +150,7 @@ if __name__ == "__main__":
         print(f"     - Decode Mode: {GA_DECODE_MODE}")
         print(f"     - Release Mode: {GA_RELEASE_MODE}")
         print(f"     - Mutex Mode: {GA_MUTEX_MODE}")
+        print(f"     - Dominance Rule: {GA_DOMINANCE_RULE}")
         print(f"     - Repeats/Instance: {GA_REPEATS}")
     print(f"  📌 SAVE_GANTT_CHART: {SAVE_GANTT_CHART}")
     if SAVE_GANTT_CHART:
@@ -158,19 +162,11 @@ if __name__ == "__main__":
     # -----------------------------
     # 4) 파라미터 설정
     # -----------------------------
+    # env_params: 옵션만 설정. 구체적인 문제 파라미터(N_P, N_T, duration_max 등)는
+    # 섹션 6에서 pickle/checkpoint로부터 자동 로드됩니다.
     env_params = {
-        'batch_size': 1,  # 테스트 시 배치 크기
-        'pomo_size': 1,   # 테스트 시 POMO 크기
-        'N_P': 5,  # 프로젝트 수
-        'N_A_min': 4,  # 프로젝트당 최소 activity 수
-        'N_A_max': 6,  # 프로젝트당 최대 activity 수
-        'N_T': 4,  # 팀 수
-        'duration_min': 2,
-        'duration_max': 6,
-        'precedence_prob': 0.3,
-        'mutex_prob': 0.1,
-        'eligible_teams_ratio': 0.6,
-        'due_date_tightness': 1.3,
+        'batch_size': 1,
+        'pomo_size': 1,
         'objective': OBJECTIVE,
         'debug_env': DEBUG_ENV,
         'state_mode': 'daniel' if MODEL_TYPE == 'daniel' else 'pyg',
@@ -179,31 +175,11 @@ if __name__ == "__main__":
         'dominance_rule': DOMINANCE_RULE,
     }
 
-    # 모델 파라미터 설정 (MODEL_TYPE에 따라 분기)
-    if MODEL_TYPE == 'gat':
-        model_params = {
-            'embedding_dim': 128,
-            'num_head': 8,
-            'num_encoder_layer': 3,
-            'input_dim': 8,  # 패딩 방식: Activity(4) + Team(1) + Project(3) = 8
-        }
-    elif MODEL_TYPE == 'daniel':
-        model_params = {
-            'fea_act_input_dim': 12,
-            'fea_team_input_dim': 8,
-            'num_heads_AAB': [4, 4],
-            'num_heads_TAB': [4, 4],
-            'layer_fea_output_dim': [32, 8],
-            'dropout_prob': 0.0,
-            'num_mlp_layers_actor': 3,
-            'hidden_dim_actor': 64,
-            'num_mlp_layers_critic': 3,
-            'hidden_dim_critic': 64,
-        }
-    else:
-        raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Use 'gat' or 'daniel'.")
-    
-    # 옵티마이저 파라미터 설정
+    # model_params: RL 테스트 시 checkpoint에서 자동 로드 (섹션 6.5)
+    # GA 전용 테스트 시에는 불필요
+    model_params = None
+
+    # 옵티마이저 파라미터 설정 (테스트 시 학습은 안 하지만 Trainer 초기화에 필요)
     optimizer_params = {
         'optimizer': {
             'lr': 1e-4,
@@ -332,6 +308,7 @@ if __name__ == "__main__":
             {'Item': 'Decode Mode',      'Value': GA_DECODE_MODE},
             {'Item': 'Release Mode',     'Value': GA_RELEASE_MODE},
             {'Item': 'Mutex Mode',       'Value': GA_MUTEX_MODE},
+            {'Item': 'Dominance Rule',   'Value': GA_DOMINANCE_RULE},
             {'Item': 'Repeats/Instance', 'Value': GA_REPEATS},
             {'Item': 'Device',           'Value': 'CPU'},
             {'Item': 'Test Files',       'Value': f'{TEST_FILE_START} to {TEST_FILE_END}'},
@@ -401,7 +378,7 @@ if __name__ == "__main__":
 
     print(f"📂 데이터 경로: {data_base_dir}")
 
-    # 데이터 폴더/파일 존재 확인
+    # 데이터 폴더/파일 존재 확인 및 env_params 로드
     if TEST_DATA_TYPE == 'val':
         if not val_batch_path.exists():
             print(f"⚠️  경고: Validation 배치 파일이 존재하지 않습니다: {val_batch_path}")
@@ -410,14 +387,12 @@ if __name__ == "__main__":
         # 배치 파일 로드
         with open(val_batch_path, 'rb') as f:
             val_batch_problem = pickle.load(f)
-        # pickle에 저장된 env_params로 덮어쓰기 (N_P, N_T 등 일치 보장)
+        # pickle에 저장된 env_params 적용 (batch_size/pomo_size/state_mode/debug_env 제외)
         saved_env = val_batch_problem['env_params']
-        env_params['N_P'] = saved_env['N_P']
-        env_params['N_T'] = saved_env['N_T']
-        env_params['batch_size'] = 1  # 테스트 시 단일 인스턴스
-        env_params['pomo_size'] = 1
+        for k, v in saved_env.items():
+            if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
+                env_params[k] = v
         print(f"📄 Validation 배치 파일 로드 완료: {val_batch_path}")
-        print(f"   pickle env_params 적용: N_P={env_params['N_P']}, N_T={env_params['N_T']}")
         print(f"   인스턴스 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     else:
         val_batch_problem = None
@@ -425,13 +400,68 @@ if __name__ == "__main__":
             print(f"⚠️  경고: 데이터 폴더가 존재하지 않습니다: {data_base_dir}")
             print(f"   {TEST_DATA_TYPE} 데이터를 먼저 생성해주세요.")
             exit(1)
+        # 첫 번째 파일에서 env_params 로드
+        first_file = data_base_dir / f"{TEST_FILE_START}.pickle"
+        if first_file.exists():
+            with open(first_file, 'rb') as f:
+                first_problem = pickle.load(f)
+            saved_env = first_problem['env_params']
+            for k, v in saved_env.items():
+                if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
+                    env_params[k] = v
+            print(f"📄 Test 데이터 env_params 적용 (from {TEST_FILE_START}.pickle)")
         print(f"📄 데이터 파일 범위: {TEST_FILE_START}~{TEST_FILE_END}")
     
     # -----------------------------
+    # 6.5) 체크포인트 env_params로 누락값 보충
+    # -----------------------------
+    # 기존 pickle에는 duration_max 등 feature 정규화에 필요한 값이 누락될 수 있음.
+    # 체크포인트에 저장된 학습 시 env_params로 보충.
+    ckpt_dir = project_root / "checkpoints" / CHECKPOINT_FOLDER
+    if "RL" in test_algorithms and ckpt_dir.exists():
+        _ckpt_for_params = ckpt_dir / (CHECKPOINT_FILE or "epoch0.pt")
+        if _ckpt_for_params.exists():
+            _ckpt_data = torch.load(_ckpt_for_params, map_location='cpu', weights_only=False)
+            if isinstance(_ckpt_data, dict) and 'env_params' in _ckpt_data:
+                _ckpt_env = _ckpt_data['env_params']
+                _filled = []
+                for k, v in _ckpt_env.items():
+                    if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
+                        if k not in env_params:
+                            env_params[k] = v
+                            _filled.append(f"{k}={v}")
+                        elif env_params[k] != v and k in ('duration_min', 'duration_max'):
+                            # 피처 정규화에 직접 영향을 주는 값은 checkpoint 기준으로 보정
+                            print(f"⚠️  {k} 불일치! pickle={env_params[k]}, checkpoint={v} → checkpoint 값 사용")
+                            env_params[k] = v
+                if _filled:
+                    print(f"📌 checkpoint env_params에서 누락값 보충: {', '.join(_filled)}")
+                # model_params도 checkpoint에서 로드
+                if 'model_params' in _ckpt_data:
+                    model_params = _ckpt_data['model_params']
+                    print(f"📌 checkpoint에서 model_params 로드 완료")
+            del _ckpt_data
+
+    # env_params 필수값 검증
+    _required_keys = ['N_P', 'N_T', 'N_A_min', 'N_A_max', 'duration_min', 'duration_max']
+    _missing = [k for k in _required_keys if k not in env_params]
+    if _missing and "RL" in test_algorithms:
+        print(f"❌ env_params 필수값 누락: {_missing}")
+        print(f"   pickle 또는 checkpoint에 해당 값이 없습니다. 학습을 다시 실행하거나 data를 재생성하세요.")
+        exit(1)
+
+    # 최종 env_params 출력
+    print(f"\n📋 최종 env_params (pickle + checkpoint 기반):")
+    print(f"   N_P={env_params.get('N_P')}, N_T={env_params.get('N_T')}, "
+          f"N_A=[{env_params.get('N_A_min')},{env_params.get('N_A_max')}], "
+          f"duration=[{env_params.get('duration_min')},{env_params.get('duration_max')}]")
+    print(f"   allow_wait_release={env_params.get('allow_wait_release')}, "
+          f"allow_wait_mutex={env_params.get('allow_wait_mutex')}, "
+          f"dominance_rule={env_params.get('dominance_rule')}")
+
+    # -----------------------------
     # 7) 체크포인트 로드 (RL 테스트가 있을 때만)
     # -----------------------------
-    ckpt_dir = project_root / "checkpoints" / CHECKPOINT_FOLDER
-    
     all_ckpts = []
     if "RL" in test_algorithms:
         if not ckpt_dir.exists():
@@ -530,6 +560,7 @@ if __name__ == "__main__":
                             decode_mode=GA_DECODE_MODE,
                             release_mode=GA_RELEASE_MODE,
                             mutex_mode=GA_MUTEX_MODE,
+                            dominance_rule=GA_DOMINANCE_RULE,
                             verbose=GA_VERBOSE
                         )
                         sol = ga.evolve()
@@ -637,14 +668,23 @@ if __name__ == "__main__":
         print(f"\n{'='*60}")
         print(f"Testing Checkpoint: {checkpoint_name}")
         print(f"{'='*60}")
-        
-        # Trainer 초기화
-        trainer = Scheduling_Trainer(env_params, model_params, optimizer_params, trainer_params)
-        
-        # 체크포인트 로드
+
+        # 체크포인트 로드 및 Trainer 초기화
         try:
             checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
-            
+
+            # model_params를 checkpoint에서 로드 (아직 없으면)
+            if model_params is None:
+                if isinstance(checkpoint, dict) and 'model_params' in checkpoint:
+                    model_params = checkpoint['model_params']
+                    print(f"📌 checkpoint에서 model_params 로드 완료")
+                else:
+                    print(f"❌ model_params를 찾을 수 없습니다 (checkpoint에 없음)")
+                    continue
+
+            # Trainer 초기화
+            trainer = Scheduling_Trainer(env_params, model_params, optimizer_params, trainer_params)
+
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 trainer.model.load_state_dict(checkpoint['model_state_dict'])
                 print(f"✅ RL 모델 로드 완료: {checkpoint_name}")
@@ -655,10 +695,10 @@ if __name__ == "__main__":
             else:
                 trainer.model.load_state_dict(checkpoint)
                 print(f"✅ RL 모델 로드 완료 (이전 형식): {checkpoint_name}")
-            
+
             trainer.model.to(device)
             trainer.model.eval()
-            
+
         except Exception as e:
             print(f"❌ RL 모델 로드 실패: {e}")
             import traceback
@@ -667,38 +707,112 @@ if __name__ == "__main__":
         
         rl_results = []
 
-        for i in range(TEST_FILE_START, TEST_FILE_END + 1):
-                # 데이터 로드: val이면 배치에서 단일 인스턴스 추출, test이면 개별 파일
-                if val_batch_problem is not None:
-                    # 배치에서 i번째 인스턴스를 단일 problem으로 추출
-                    problem = {}
-                    for key, value in val_batch_problem.items():
-                        if isinstance(value, torch.Tensor):
-                            problem[key] = value[i:i+1]  # (1, ...) 형태로 슬라이싱
-                        elif key == 'batch_projects':
-                            problem[key] = [value[i]]
-                        elif key == 'batch_activities':
-                            problem[key] = [value[i]]
-                        elif key == 'env_params':
-                            problem[key] = {**value, 'batch_size': 1, 'pomo_size': 1}
-                        else:
-                            problem[key] = value
-                    print(f"\n📋 Validation 인스턴스 {i} (배치에서 추출)")
+        if val_batch_problem is not None:
+            # -----------------------------------------------
+            # Val 모드: 배치 전체를 한 번에 처리 (학습 validation과 동일)
+            # max_time_val 등 배치 단위 정규화가 학습과 동일하게 적용됨
+            # -----------------------------------------------
+            n_instances = TEST_FILE_END - TEST_FILE_START + 1
+            print(f"\n📋 Validation 배치 처리: {TEST_FILE_START}~{TEST_FILE_END} ({n_instances}개 인스턴스)")
+
+            # val batch에서 슬라이스 추출
+            batch_problem = {}
+            for key, value in val_batch_problem.items():
+                if isinstance(value, torch.Tensor):
+                    batch_problem[key] = value[TEST_FILE_START:TEST_FILE_END + 1]
+                elif key in ('batch_projects', 'batch_activities'):
+                    batch_problem[key] = value[TEST_FILE_START:TEST_FILE_END + 1]
+                elif key == 'env_params':
+                    batch_problem[key] = {**value, 'batch_size': n_instances, 'pomo_size': 1}
                 else:
-                    data_path = data_base_dir / f"{i}.pickle"
-                    if not data_path.exists():
-                        print(f"⚠️  Warning: Data file not found: {data_path}")
-                        continue
-                    print(f"\n📋 테스트 파일 {i}.pickle")
-                    with open(data_path, 'rb') as fr:
-                        problem = pickle.load(fr)
+                    batch_problem[key] = value
+
+            batch_env_params = copy.deepcopy(env_params)
+            batch_env_params['batch_size'] = n_instances
+            batch_env_params['pomo_size'] = 1
+
+            start_time = time.time()
+            try:
+                with torch.no_grad():
+                    test_env = SchedulingEnv(batch_env_params, debug_env=False, device='cpu')
+                    test_env._reset(batch_problem)
+
+                    if MODEL_TYPE == 'gat':
+                        action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
+                        trainer.model.set_action_space(action_to_pair, max_action_space)
+
+                    done = False
+                    s = test_env._get_state()
+
+                    while not done:
+                        if MODEL_TYPE == 'daniel':
+                            fea_act = s.fea_act_tensor.to(device)
+                            act_mask = s.act_mask_tensor.to(device)
+                            candidate = s.candidate_tensor.to(device)
+                            fea_team = s.fea_team_tensor.to(device)
+                            team_mask = s.team_mask_tensor.to(device)
+                            comp_idx = s.comp_idx_tensor.to(device)
+                            dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
+                            fea_pairs = s.fea_pairs_tensor.to(device)
+                            pred_idx = s.pred_idx_tensor.to(device)
+                            succ_idx = s.succ_idx_tensor.to(device)
+
+                            pi, v = trainer.model(
+                                fea_act, act_mask, candidate, fea_team,
+                                team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                                pred_idx, succ_idx
+                            )
+                            action_flat = torch.argmax(pi, dim=1)
+                            N_T = test_env.N_T
+                            act_idx  = action_flat // N_T
+                            team_idx = action_flat % N_T
+                            s, obj_value, done = test_env.step_pair(
+                                act_idx.to(test_env.device),
+                                team_idx.to(test_env.device)
+                            )
+                        else:
+                            action = trainer.model.get_max_action(s)
+                            s, obj_value, done = test_env.step(action.to('cpu'))
+
+                total_runtime = time.time() - start_time
+                per_instance_runtime = total_runtime / n_instances
+                all_scores = test_env._get_obj()  # (n_instances,)
+
+                for idx in range(n_instances):
+                    instance_id = TEST_FILE_START + idx
+                    test_score = all_scores[idx].item()
+                    rl_results.append({
+                        'algorithm': 'RL',
+                        'instance': instance_id,
+                        'objective_value': test_score,
+                        'runtime': per_instance_runtime,
+                    })
+                    print(f"   [RL][Instance {instance_id}] {OBJECTIVE}: {test_score:.4f}")
+
+                print(f"   [RL] 배치 총 Runtime: {total_runtime:.4f}s (인스턴스당 평균: {per_instance_runtime:.4f}s)")
+
+            except Exception as e:
+                print(f"   ❌ [RL][Val Batch] 실행 중 오류: {e}")
+                import traceback
+                traceback.print_exc()
+
+        else:
+            # -----------------------------------------------
+            # Test 모드: 인스턴스별 개별 처리 (파일 단위)
+            # -----------------------------------------------
+            for i in range(TEST_FILE_START, TEST_FILE_END + 1):
+                data_path = data_base_dir / f"{i}.pickle"
+                if not data_path.exists():
+                    print(f"⚠️  Warning: Data file not found: {data_path}")
+                    continue
+                print(f"\n📋 테스트 파일 {i}.pickle")
+                with open(data_path, 'rb') as fr:
+                    problem = pickle.load(fr)
 
                 start_time = time.time()
 
                 try:
                     with torch.no_grad():
-                        
-                        # 환경 초기화 - Test 모드는 무조건 CPU
                         test_env = SchedulingEnv(env_params, debug_env=False, device='cpu')
                         test_env._reset(problem)
 
@@ -706,7 +820,6 @@ if __name__ == "__main__":
                         s = test_env._get_state()
 
                         if MODEL_TYPE == 'daniel':
-                            # DANIEL 모델: EnvState 텐서를 직접 모델에 전달
                             while not done:
                                 fea_act = s.fea_act_tensor.to(device)
                                 act_mask = s.act_mask_tensor.to(device)
@@ -716,51 +829,47 @@ if __name__ == "__main__":
                                 comp_idx = s.comp_idx_tensor.to(device)
                                 dynamic_pair_mask = s.dynamic_pair_mask_tensor.to(device)
                                 fea_pairs = s.fea_pairs_tensor.to(device)
+                                pred_idx = s.pred_idx_tensor.to(device)
+                                succ_idx = s.succ_idx_tensor.to(device)
 
                                 pi, v = trainer.model(
                                     fea_act, act_mask, candidate, fea_team,
-                                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs
+                                    team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                                    pred_idx, succ_idx
                                 )
-                                # Greedy: argmax → (activity, team)
                                 action_flat = torch.argmax(pi, dim=1)
                                 N_T = test_env.N_T
                                 act_idx  = action_flat // N_T
                                 team_idx = action_flat % N_T
-
                                 s, obj_value, done = test_env.step_pair(
                                     act_idx.to(test_env.device),
                                     team_idx.to(test_env.device)
                                 )
                         else:
-                            # GAT 모델: action space 전달 후 get_max_action 사용
                             action_to_pair, max_action_space = test_env.action_to_pair, test_env.max_action_space
                             trainer.model.set_action_space(action_to_pair, max_action_space)
-
                             while not done:
                                 action = trainer.model.get_max_action(s)
                                 s, obj_value, done = test_env.step(action.to('cpu'))
-                        
+
                         test_score = test_env._get_obj()
                         if isinstance(test_score, torch.Tensor):
                             test_score = test_score.mean().item()
-                    
+
                     end_time = time.time()
                     runtime = end_time - start_time
-                    
-                    result = {
+
+                    rl_results.append({
                         'algorithm': 'RL',
                         'instance': i,
                         'objective_value': test_score,
-                        'runtime': runtime
-                    }
-                    rl_results.append(result)
-                    
+                        'runtime': runtime,
+                    })
                     print(f"   [RL][Instance {i}] {OBJECTIVE}: {test_score:.4f}, Runtime: {runtime:.4f}s")
-                    
+
                     # 간트차트 및 선후관계 그래프 생성
                     if SAVE_GANTT_CHART:
                         try:
-                            # 간트차트 생성 (알고리즘별)
                             create_gantt_chart_from_env(
                                 env=test_env,
                                 instance_name=f"instance_{i}",
@@ -769,26 +878,17 @@ if __name__ == "__main__":
                                 save_dir=gantt_dir,
                                 show=SHOW_GANTT_CHART
                             )
-                            
-                            # 선후관계 그래프 생성 (인스턴스당 한 번만)
                             if i not in precedence_graphs_created:
                                 num_act = test_env.num_activities[0].item()
                                 activity_predecessors = {}
                                 activity_mutex = {}
                                 activity_to_project = {}
-                                
                                 for act_id in range(num_act):
-                                    # predecessors 추출
                                     preds = test_env.activity_predecessors[0, act_id].cpu().numpy().tolist()
                                     activity_predecessors[act_id] = [p for p in preds if p >= 0]
-                                    
-                                    # mutex 추출
                                     mutex = test_env.activity_mutex[0, act_id].cpu().numpy().tolist()
                                     activity_mutex[act_id] = [m for m in mutex if m >= 0]
-                                    
-                                    # project 매핑
                                     activity_to_project[act_id] = test_env.activity_project[0, act_id].item()
-                                
                                 create_precedence_graph(
                                     activity_predecessors=activity_predecessors,
                                     activity_mutex=activity_mutex,
@@ -800,7 +900,7 @@ if __name__ == "__main__":
                                 precedence_graphs_created.add(i)
                         except Exception as e:
                             print(f"   ⚠️ 간트차트/그래프 생성 실패: {e}")
-                
+
                 except Exception as e:
                     print(f"   ❌ [RL][Instance {i}] 실행 중 오류: {e}")
                     import traceback

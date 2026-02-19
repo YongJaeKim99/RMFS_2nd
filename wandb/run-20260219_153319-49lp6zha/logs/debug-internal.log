@@ -1,0 +1,17 @@
+{"time":"2026-02-19T15:33:19.1589684+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\프로젝트\\삼전DS 전략산학\\Code\\wandb\\run-20260219_153319-49lp6zha\\logs\\debug-core.log"}
+{"time":"2026-02-19T15:33:19.5049221+09:00","level":"INFO","msg":"created new stream","id":"49lp6zha"}
+{"time":"2026-02-19T15:33:19.5059383+09:00","level":"INFO","msg":"stream: started","id":"49lp6zha"}
+{"time":"2026-02-19T15:33:19.5059383+09:00","level":"INFO","msg":"handler: started","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:19.5059383+09:00","level":"INFO","msg":"sender: started","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:19.5059383+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:20.0505355+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-19T15:33:35.2100793+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-19T15:33:50.1445362+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-19T15:33:51.6101815+09:00","level":"INFO","msg":"stream: closing","id":"49lp6zha"}
+{"time":"2026-02-19T15:33:51.6101815+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-19T15:33:51.6101815+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-19T15:33:52.4186488+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-19T15:33:52.7221275+09:00","level":"INFO","msg":"sender: closed","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:52.7221275+09:00","level":"INFO","msg":"handler: closed","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:52.7221275+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"49lp6zha"}
+{"time":"2026-02-19T15:33:52.7226296+09:00","level":"INFO","msg":"stream: closed","id":"49lp6zha"}

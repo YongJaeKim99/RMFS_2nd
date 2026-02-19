@@ -95,6 +95,7 @@ class GeneticAlgorithm:
         decode_mode: str = "batch",  # "batch" 또는 "immediate"
         release_mode: str = "wait",  # "wait": release time까지 기다림, "skip": 아직이면 건너뜀
         mutex_mode: str = "wait",    # "wait": mutex 끝날 때까지 기다림, "skip": 진행 중이면 건너뜀
+        dominance_rule: bool = False,  # True: 대기 pair 중 idle time에 즉시 수행 가능한 activity가 있으면 skip
         verbose: bool = True  # 세대별 진행상황 출력 여부
     ):
         self.projects = projects
@@ -107,6 +108,7 @@ class GeneticAlgorithm:
         self.decode_mode = decode_mode  # "batch" 또는 "immediate"
         self.release_mode = release_mode  # "wait" 또는 "skip"
         self.mutex_mode = mutex_mode      # "wait" 또는 "skip"
+        self.dominance_rule = dominance_rule  # release/mutex wait이 있을 때만 유효
         self.verbose = verbose
         
         # 모든 activities를 수집
@@ -152,6 +154,59 @@ class GeneticAlgorithm:
         
         return population
     
+    def _is_dominated_by_immediate(
+        self,
+        act_id: int,
+        team_id: int,
+        effective_avail: int,
+        idle_time: int,
+        schedule: Dict[int, Tuple[int, int, int]],
+        scheduled_activities: Set[int],
+    ) -> bool:
+        """
+        Dominance rule (RL 환경 대응):
+        pair (act_id, team_id)가 dominated인지 확인.
+
+        team이 effective_avail 시점에 유휴(idle)인데, 그 idle_time 안에 완료 가능한
+        즉시 스케줄 가능한 다른 activity B가 존재하면 True 반환.
+
+        즉시 스케줄 가능(immediately schedulable) 조건:
+          - B ≠ act_id, B 미완료
+          - B의 모든 선행 activity 완료
+          - B의 프로젝트 release_time <= effective_avail (이미 해제)
+          - B의 mutex 파트너 중 실행 중인 것 없음 (end_time <= effective_avail)
+          - team_id가 B에 eligible
+          - B의 duration <= idle_time (idle 시간 내 완료 가능)
+        """
+        for other_act in self.activities:
+            if other_act.id == act_id:
+                continue
+            if other_act.id in scheduled_activities:
+                continue
+            if other_act.duration > idle_time:
+                continue
+            # Team eligibility
+            if other_act.eligible_teams and team_id not in other_act.eligible_teams:
+                continue
+            # Predecessor check
+            if not all(pred_id in scheduled_activities for pred_id in other_act.predecessors):
+                continue
+            # Release time check: 이미 해제되어 있어야 함
+            other_project = self.project_dict[other_act.project_id]
+            if other_project.release_time > effective_avail:
+                continue
+            # Mutex check: 모든 mutex 파트너가 effective_avail 이전에 완료
+            mutex_blocked = False
+            for mutex_id in other_act.mutually_exclusive:
+                if mutex_id in scheduled_activities and schedule[mutex_id][1] > effective_avail:
+                    mutex_blocked = True
+                    break
+            if mutex_blocked:
+                continue
+            # 위 조건 모두 통과 → 이 pair는 dominated
+            return True
+        return False
+
     def decode_and_schedule(self, solution: Solution) -> Dict[int, Tuple[int, int, int]]:
         """
         Random Key 방식으로 Solution을 실제 스케줄로 변환
@@ -195,14 +250,14 @@ class GeneticAlgorithm:
                 pair = solution.pairs[idx]
                 act_id = pair.activity_id
                 team_id = pair.team_id
-                
+
                 # 이미 이 activity가 스케줄되었으면 skip
                 if act_id in scheduled_activities:
                     continue
-                
+
                 activity = self.activity_dict[act_id]
                 project = self.project_dict[activity.project_id]
-                
+
                 # 선행 작업 완료 체크
                 all_predecessors_done = True
                 earliest_start = 0
@@ -217,6 +272,9 @@ class GeneticAlgorithm:
 
                 if not all_predecessors_done:
                     continue
+
+                # dominance 계산용: 선행 제약만 반영된 earliest_start 저장
+                pred_earliest = earliest_start
 
                 # Release time 제약
                 if self.release_mode == "skip":
@@ -251,6 +309,17 @@ class GeneticAlgorithm:
 
                 # 팀의 가용 시간 확인
                 earliest_start = max(earliest_start, team_available_time[team_id])
+
+                # Dominance rule:
+                # wait 모드로 인해 팀 idle time이 생기고, 그 시간에 다른 즉시 가능한
+                # activity가 있으면 이 pair를 skip (RL 환경의 dominance_rule 대응)
+                if self.dominance_rule and (self.release_mode == "wait" or self.mutex_mode == "wait"):
+                    effective_avail = max(team_available_time[team_id], pred_earliest)
+                    idle_time = earliest_start - effective_avail
+                    if idle_time > 0 and self._is_dominated_by_immediate(
+                        act_id, team_id, effective_avail, idle_time, schedule, scheduled_activities
+                    ):
+                        continue
 
                 # 스케줄에 추가
                 start_time = earliest_start
@@ -317,6 +386,9 @@ class GeneticAlgorithm:
                 if not all_predecessors_done:
                     continue
 
+                # dominance 계산용: 선행 제약만 반영된 earliest_start 저장
+                pred_earliest = earliest_start
+
                 team_ready_time = team_available_time[team_id]
 
                 # Release time 제약
@@ -349,24 +421,35 @@ class GeneticAlgorithm:
 
                 # 실제 시작 시간 계산
                 earliest_start = max(earliest_start, team_ready_time)
-                
+
+                # Dominance rule:
+                # wait 모드로 인해 팀 idle time이 생기고, 그 시간에 다른 즉시 가능한
+                # activity가 있으면 이 pair를 skip (RL 환경의 dominance_rule 대응)
+                if self.dominance_rule and (self.release_mode == "wait" or self.mutex_mode == "wait"):
+                    effective_avail = max(team_ready_time, pred_earliest)
+                    idle_time = earliest_start - effective_avail
+                    if idle_time > 0 and self._is_dominated_by_immediate(
+                        act_id, team_id, effective_avail, idle_time, schedule, scheduled_activities
+                    ):
+                        continue
+
                 # 스케줄에 추가
                 start_time = earliest_start
                 end_time = start_time + activity.duration
                 schedule[act_id] = (start_time, end_time, team_id)
                 scheduled_activities.add(act_id)
                 scheduled_in_this_pass = True
-                
+
                 # 팀 가용 시간 업데이트
                 team_available_time[team_id] = end_time
-                
+
                 # ★ 즉시 처음부터 다시 시작 (for 루프 중단)
                 break
-            
+
             # 이번 pass에서 아무것도 스케줄되지 않았으면 종료
             if not scheduled_in_this_pass:
                 break
-        
+
         return schedule
     
     def calculate_objective(self, solution: Solution) -> float:
@@ -517,6 +600,7 @@ class GeneticAlgorithm:
                 print("  - Immediate: activity 스케줄 시 즉시 처음부터 재시작")
             print(f"Release 모드: {self.release_mode} ({'기다림' if self.release_mode == 'wait' else '건너뜀'})")
             print(f"Mutex 모드: {self.mutex_mode} ({'기다림' if self.mutex_mode == 'wait' else '건너뜀'})")
+            print(f"Dominance Rule: {self.dominance_rule}")
             print("-" * 60)
 
         # 초기 population 생성 (feasible solution이 나올 때까지 반복)

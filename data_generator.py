@@ -207,17 +207,24 @@ def generate_scheduling_data_batch(env_params):
             project_release_time[b, p_idx] = proj.release_time
             project_due_date[b, p_idx] = proj.due_date
     
-    # 환경 파라미터
+    # 환경 파라미터 (추론 시 feature 정규화에 필요한 값 모두 포함)
     env_params_tensor = {
         'N_P': N_P,
+        'N_A_min': N_A_min,
+        'N_A_max': N_A_max,
         'max_N_A': max_activities,
         'N_T': N_T,
         'batch_size': batch_size,
         'pomo_size': pomo_size,
+        'duration_min': duration_min,
+        'duration_max': duration_max,
         'objective': env_params.get('objective', 'tardiness'),
         'max_preds': max_preds,
         'max_mutex': max_mutex,
         'max_succs': max_succs,
+        'allow_wait_release': env_params.get('allow_wait_release', False),
+        'allow_wait_mutex': env_params.get('allow_wait_mutex', False),
+        'dominance_rule': env_params.get('dominance_rule', False),
     }
     
     problem = {
