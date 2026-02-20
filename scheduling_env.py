@@ -205,7 +205,7 @@ class SchedulingEnv:
     def _initialize_action_space(self):
         """
         각 배치별로 eligible한 (activity, team) 조합만 추출하여 action space 구성
-        배치 내 최대 action space 크기에 맞춰 패딩 적용 (완전 벡터화 -- for문 0개)
+        배치 내 최대 action space 크기에 맞춰 패딩 적용
         """
         B = self.batch_size
         N_T = self.N_T

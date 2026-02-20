@@ -175,7 +175,7 @@ ppo_utils.py             # PPO 전용 유틸리티 (PPOMemory, eval_actions)
   - critic:        MLP (상태 가치 추정)
 
 forward() 입력:
-  fea_j             (B, N, 10) — activity feature
+  fea_j             (B, N, 12) — activity feature
   op_mask           (B, N, 3)  — activity attention mask
   candidate         (B, N)     — activity identity (0..N-1)
   fea_m             (B, T, 8)  — team feature
@@ -286,7 +286,7 @@ PPOMemory(gamma, gae_lambda)
 ```
 입력 (환경 → EnvState 텐서)
 │
-├─ fea_act    [B, N, 10]   Activity feature (10차원)
+├─ fea_act    [B, N, 12]   Activity feature (12차원)
 ├─ act_mask   [B, N, 3]    Activity attention mask
 ├─ candidate  [B, N]       activity identity (0..N-1)
 ├─ fea_team   [B, T, 8]    Team feature (8차원)
@@ -370,7 +370,7 @@ Softmax → π  [B, N*T]
 ```python
 @dataclass
 class EnvState:
-    fea_act_tensor:         Tensor  # (B, N, 10)  — activity features
+    fea_act_tensor:         Tensor  # (B, N, 12)  — activity features
     act_mask_tensor:        Tensor  # (B, N, 3)   — activity attention mask
     fea_team_tensor:        Tensor  # (B, T, 8)   — team features
     team_mask_tensor:       Tensor  # (B, T, T)   — team attention mask
@@ -380,20 +380,22 @@ class EnvState:
     fea_pairs_tensor:       Tensor  # (B, N, T, 8) — pair feature
 ```
 
-### 5.2 Activity Feature (`fea_act`) — 10차원
+### 5.2 Activity Feature (`fea_act`) — 12차원
 
 ```
 인덱스  이름                    설명
   0    started                 시작 여부 (0 or 1)
   1    ended                   완료 여부 (0 or 1)
   2    norm_duration           duration / max_duration
-  3    norm_remaining          remaining_time / max_duration
-  4    pred_completion_ratio   선행자 완료 비율 (DAG 반영: pred_done / total_pred)  ★ RCMPSP 핵심
-  5    ready                   현재 실행 가능 여부 (0 or 1)
-  6    norm_start_time         시작 시간 / max_time (미시작 시 0)
-  7    proj_rem_act_ratio      프로젝트 내 남은 activity 비율  ★ Project 정보
-  8    proj_rem_work_ratio     프로젝트 내 남은 작업량 비율  ★ Project 정보
-  9    eligible_ratio          eligible 팀 수 / 전체 팀 수
+  3    min_pt                  eligible 팀 중 최소 processing time / max_duration  ★ 논문 피처 1
+  4    pt_span                 eligible 팀 PT 범위 (max - min) / max_duration  ★ 논문 피처 3
+  5    norm_remaining          remaining_time / max_duration
+  6    pred_completion_ratio   선행자 완료 비율 (DAG 반영: pred_done / total_pred)  ★ RCMPSP 핵심
+  7    ready                   현재 실행 가능 여부 (0 or 1)
+  8    completion_lb           예상 완료 시간 하한 / max_time  ★ 논문 피처 6 (DAG relaxation)
+  9    proj_rem_act_ratio      프로젝트 내 남은 activity 비율  ★ Project 정보
+ 10    proj_rem_work_ratio     프로젝트 내 남은 작업량 비율  ★ Project 정보
+ 11    eligible_ratio          eligible 팀 수 / 전체 팀 수
 
 * 정규화: 유효 activity 기준 mean/std 정규화 (패딩 노드 제외)
 * 패딩 노드는 모두 0으로 설정
@@ -483,10 +485,8 @@ comp_idx = avail_t.unsqueeze(2) * avail_t.unsqueeze(1)  # (B, T, T, N)
 ```python
 def step_pair(self, activity_ids, team_ids):
     """
-    DANIEL 모델 전용 — (activity_id, team_id) 직접 입력
-    GAT의 step()은 action_to_pair 인덱스를 요구하지만,
-    DANIEL은 project-level action → activity/team으로 직접 변환하므로
-    별도의 step_pair()를 사용
+    (activity_id, team_id)를 직접 입력받는 step 메서드.
+    flat action index에서 activity/team으로 직접 분해하여 사용.
 
     activity_ids: (B,)  tensor
     team_ids:     (B,)  tensor
@@ -497,33 +497,27 @@ def step_pair(self, activity_ids, team_ids):
 
 ## 6. train.py / test.py 와의 상호작용
 
-### 6.1 모델 및 알고리즘 선택
+### 6.1 알고리즘 선택
 
 ```python
 # train.py 상단에서 설정
 ALGORITHM_TYPE = 'ppo'     # 'reinforce' or 'ppo'
-MODEL_TYPE = 'daniel'      # 'gat' or 'daniel'
-# ※ PPO는 반드시 MODEL_TYPE='daniel' 이어야 합니다 (Critic 필요)
 ```
 
-모델 타입에 따라 아래가 자동으로 분기됩니다:
-
-| 항목 | GAT | DANIEL |
-|------|-----|--------|
-| `env_params['state_mode']` | `'pyg'` | `'daniel'` |
-| `model_params` | embedding_dim, num_head, ... | fea_act_input_dim, num_heads_AAB, ... |
-| `_get_state()` 반환 | PyG `Data` 객체 리스트 | `EnvState` 데이터클래스 |
-| `env.step(action)` | 사용 | 미사용 |
-| `env.step_pair(act, team)` | 미사용 | 사용 |
-| Action 공간 설정 | `set_action_space()` 필요 | 불필요 |
-| 지원 알고리즘 | REINFORCE only | REINFORCE 또는 PPO |
+| 항목 | 설명 |
+|------|------|
+| `env_params['state_mode']` | `'daniel'` (고정) |
+| `model_params` | fea_act_input_dim, num_heads_AAB, ... |
+| `_get_state()` 반환 | `EnvState` 데이터클래스 |
+| `env.step_pair(act, team)` | (activity, team) 직접 입력 |
+| 지원 알고리즘 | REINFORCE 또는 PPO |
 
 ### 6.2 model_params 구조
 
 ```python
 # 논문 원본 파라미터 (DANIEL, ~28K params)
 model_params = {
-    'fea_act_input_dim':  10,    # Activity feature 차원 (환경 고정값)
+    'fea_act_input_dim':  12,    # Activity feature 차원 (환경 고정값)
     'fea_team_input_dim': 8,     # Team feature 차원 (환경 고정값)
     'num_heads_AAB':  [4, 4],    # Activity Attention Block: 레이어별 헤드 수
     'num_heads_TAB':  [4, 4],    # Team Attention Block: 레이어별 헤드 수
@@ -537,7 +531,7 @@ model_params = {
 
 # RTX 5090 확장 파라미터 (~300K params)
 model_params = {
-    'fea_act_input_dim': 10,
+    'fea_act_input_dim': 12,
     'fea_team_input_dim': 8,
     'num_heads_AAB': [8, 8, 8],       # 3층
     'num_heads_TAB': [8, 8, 8],       # 3층
@@ -569,16 +563,15 @@ model_params = {
 
 ```python
 # trainer.py __init__()
-if self.model_type == 'daniel':
-    daniel_config = SimpleNamespace(
-        fea_j_input_dim  = model_params['fea_act_input_dim'],
-        fea_m_input_dim  = model_params['fea_team_input_dim'],
-        num_heads_OAB    = model_params['num_heads_AAB'],
-        num_heads_MAB    = model_params['num_heads_TAB'],
-        layer_fea_output_dim = model_params['layer_fea_output_dim'],
-        ...
-    )
-    self.model = DANIEL(daniel_config).to(device)
+daniel_config = SimpleNamespace(
+    fea_j_input_dim  = model_params['fea_act_input_dim'],
+    fea_m_input_dim  = model_params['fea_team_input_dim'],
+    num_heads_OAB    = model_params['num_heads_AAB'],
+    num_heads_MAB    = model_params['num_heads_TAB'],
+    layer_fea_output_dim = model_params['layer_fea_output_dim'],
+    ...
+)
+self.model = DANIEL(daniel_config).to(device)
 ```
 
 ### 7.2 알고리즘 분기
@@ -751,25 +744,7 @@ PPOMemory 저장 구조:
 | **보상 구조** | 에피소드 종료 시 -obj | 희소 보상 (step별 0, 종료 시 -obj) |
 | **데이터 효율** | 낮음 (on-policy, 1회 사용 후 폐기) | 높음 (K epoch 재사용) |
 | **POMO 지원** | O (pomo_size > 1) | X (pomo_size = 1 권장) |
-| **GAT 지원** | O | X (DANIEL 전용) |
 | **학습 데이터** | 매 epoch 새로 생성 | N_r epoch마다 리샘플링 |
-
----
-
-## 9. DANIEL vs GAT 비교
-
-| 항목 | GAT (gnn_model.py) | DANIEL (model/main_model.py) |
-|------|-------------------|------------------------------|
-| **상태 표현** | 이종 그래프 (PyG) | 분리된 텐서 (Activity, Team) |
-| **인코더** | Graph Attention Network | Dual Attention Network |
-| **Action Space** | `(activity, team)` 직접 열거 | `N × T` activity 단위 |
-| **가치 함수** | 없음 (REINFORCE only) | 내장 Critic (PPO 가능) |
-| **pair feature** | 없음 | (B, N, T, 8) pair feature 활용 |
-| **step 메서드** | `env.step(action)` | `env.step_pair(act, team)` |
-| **state 생성** | `_get_state_pyg()` | `_get_state_daniel()` |
-| **스케일** | Activity 수 증가 시 action space 가변 | N×T 고정 (스케일에 유리) |
-| **Wait 옵션** | 없음 | allow_wait_release, allow_wait_mutex |
-| **학습 알고리즘** | REINFORCE only | REINFORCE 또는 PPO |
 
 ---
 
@@ -798,8 +773,8 @@ State s_{t+1} (다음 EnvState 반환)
 
 ## 11. 확장 시 유의사항
 
-1. **`fea_act_input_dim`**: `_get_state_daniel()`에서 생성하는 feature 차원(10)과
-   `train.py`의 `model_params['fea_act_input_dim']`(10)을 항상 일치시켜야 합니다.
+1. **`fea_act_input_dim`**: `_get_state_daniel()`에서 생성하는 feature 차원(12)과
+   `train.py`의 `model_params['fea_act_input_dim']`(12)을 항상 일치시켜야 합니다.
 
 2. **`fea_team_input_dim`**: 마찬가지로 환경 출력(8)과 `model_params`(8) 일치 필요.
 
@@ -810,9 +785,8 @@ State s_{t+1} (다음 EnvState 반환)
 4. **PPO 활용 시**: `ALGORITHM_TYPE='ppo'`로 설정하면 Critic의 value loss가 자동으로 포함됩니다.
    REINFORCE에서는 `v`를 손실에 포함하지 않습니다.
 
-5. **체크포인트 호환성**: GAT와 DANIEL의 모델 구조가 완전히 다르므로,
-   `MODEL_TYPE`을 학습 때와 테스트 때 반드시 동일하게 설정해야 합니다.
-   마찬가지로 `ALGORITHM_TYPE`도 체크포인트와 일치해야 합니다 (PPO 체크포인트에는 `model_old` 포함).
+5. **체크포인트 호환성**: `ALGORITHM_TYPE`을 학습 때와 테스트 때 반드시 동일하게 설정해야 합니다
+   (PPO 체크포인트에는 `model_old` 포함).
 
 6. **Mutex/Release time 피처 추가**: 현재 mutex와 release time은 마스킹과 피처(pair feature p5, p7)로
    반영됩니다. 추가적인 명시적 피처가 필요하면 `fea_act_input_dim`을 늘려야 합니다.

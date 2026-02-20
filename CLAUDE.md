@@ -29,7 +29,7 @@ KMP_DUPLICATE_LIB_OK=TRUE "C:\Users\YongJae\anaconda3\envs\RSS_1st\python.exe" -
 
 > 주의: `python` 또는 `python.exe` 단독 명령은 Windows Store 더미 Python을 가리켜 exit code 49로 실패합니다.
 
-**주요 패키지**: torch 2.5.1, torch-geometric 2.6.1, wandb, openpyxl, numpy, pandas
+**주요 패키지**: torch 2.5.1, wandb, openpyxl, numpy, pandas
 
 ---
 
@@ -139,7 +139,7 @@ PPO 체크포인트는 `model_old_state_dict`도 포함합니다.
 
 | 파일 | 내용 |
 |------|------|
-| `MDP_STRUCTURE.md` | MDP 전체 구조 (State/Action/Reward/Transition), GAT 아키텍처, 학습 알고리즘 |
+| `MDP_STRUCTURE.md` | MDP 전체 구조 (State/Action/Reward/Transition), DANIEL 아키텍처, 학습 알고리즘 |
 | `DANIEL_STRUCTURE.md` | DANIEL 모델 상세 (파일별 역할, 피처 정의, 환경 상호작용) |
 | `GA_STRUCTURE.md` | 유전 알고리즘 구조 |
 
