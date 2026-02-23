@@ -1,0 +1,23 @@
+2026-02-19 04:33:35,083 INFO    MainThread:53300 [wandb_setup.py:_flush():81] Current SDK version is 0.21.3
+2026-02-19 04:33:35,083 INFO    MainThread:53300 [wandb_setup.py:_flush():81] Configure stats pid to 53300
+2026-02-19 04:33:35,083 INFO    MainThread:53300 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\.config\wandb\settings
+2026-02-19 04:33:35,083 INFO    MainThread:53300 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\settings
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_init.py:setup_run_log_directory():686] Logging user logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260219_043335-1e1dwbhb\logs\debug.log
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_init.py:setup_run_log_directory():687] Logging internal logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260219_043335-1e1dwbhb\logs\debug-internal.log
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_init.py:init():813] calling init triggers
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_init.py:init():818] wandb.init called with sweep_config: {}
+config: {'objective': 'tardiness', 'algorithm': 'PPO', 'model_type': 'daniel', 'N_P': 10, 'N_A_min': 4, 'N_A_max': 6, 'N_T': 5, 'batch_size': 512, 'pomo_size': 1, 'epochs': 1000, 'learning_rate': 0.0003, 'normalize_advantage': False, 'entropy_coef': 0.01, 'reward_type': 'stepwise', 'fea_act_input_dim': 12, 'fea_team_input_dim': 8, 'layer_fea_output_dim': [32, 8], '_wandb': {}}
+2026-02-19 04:33:35,085 INFO    MainThread:53300 [wandb_init.py:init():854] starting backend
+2026-02-19 04:33:37,320 INFO    MainThread:53300 [wandb_init.py:init():857] sending inform_init request
+2026-02-19 04:33:37,351 INFO    MainThread:53300 [wandb_init.py:init():865] backend started and connected
+2026-02-19 04:33:37,352 INFO    MainThread:53300 [wandb_init.py:init():936] updated telemetry
+2026-02-19 04:33:37,389 INFO    MainThread:53300 [wandb_init.py:init():960] communicating run to backend with 90.0 second timeout
+2026-02-19 04:33:38,151 INFO    MainThread:53300 [wandb_init.py:init():1011] starting run threads in backend
+2026-02-19 04:33:38,219 INFO    MainThread:53300 [wandb_run.py:_console_start():2494] atexit reg
+2026-02-19 04:33:38,220 INFO    MainThread:53300 [wandb_run.py:_redirect():2342] redirect: wrap_raw
+2026-02-19 04:33:38,220 INFO    MainThread:53300 [wandb_run.py:_redirect():2411] Wrapping output streams.
+2026-02-19 04:33:38,220 INFO    MainThread:53300 [wandb_run.py:_redirect():2434] Redirects installed.
+2026-02-19 04:33:38,222 INFO    MainThread:53300 [wandb_init.py:init():1057] run started, returning control to user process
+2026-02-19 04:34:36,277 INFO    wandb-AsyncioManager-main:53300 [service_client.py:_forward_responses():84] Reached EOF.
+2026-02-19 04:34:36,277 INFO    wandb-AsyncioManager-main:53300 [mailbox.py:close():137] Closing mailbox, abandoning 2 handles.

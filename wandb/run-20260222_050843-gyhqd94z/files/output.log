@@ -1,0 +1,32 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 5758.0801, time: 1.87s
+  💾 체크포인트 저장: ./checkpoints/20260222_050842_tardiness_DANIEL_REINFORCE\epoch0.pt
+epoch: 1
+epoch: 1, loss: 47.1416, reward: 5473.4727, tardiness: -5473.4727, time: 20.88s
+epoch: 2
+epoch: 2, loss: 138.5281, reward: 5782.1406, tardiness: -5782.1406, time: 20.58s
+epoch: 3
+epoch: 3, loss: 67.0907, reward: 5456.1055, tardiness: -5456.1055, time: 19.94s
+epoch: 4
+epoch: 4, loss: 242.8041, reward: 5487.2344, tardiness: -5487.2344, time: 20.55s
+epoch: 5
+epoch: 5, loss: 155.4841, reward: 5485.0820, tardiness: -5485.0820, time: 20.67s
+epoch: 6
+epoch: 6, loss: 128.6283, reward: 5643.6836, tardiness: -5643.6836, time: 20.39s
+epoch: 7
+epoch: 7, loss: 130.5115, reward: 5621.9844, tardiness: -5621.9844, time: 19.81s
+epoch: 8
+epoch: 8, loss: 77.8173, reward: 5386.2461, tardiness: -5386.2461, time: 17.55s
+epoch: 9
+epoch: 9, loss: 28.8734, reward: 5591.0625, tardiness: -5591.0625, time: 18.08s
+epoch: 10
+epoch: 10, loss: 32.3103, reward: 5422.3359, tardiness: -5422.3359, time: 17.78s
+epoch: 11
+epoch: 11, loss: 86.6096, reward: 5492.1602, tardiness: -5492.1602, time: 17.54s
+epoch: 12
+
+
+⚠️ Ctrl+C 감지! Epoch 12에서 학습을 중단합니다.
+
+🏆 Best Train Score: -5782.1406

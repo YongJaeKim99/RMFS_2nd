@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'reinforce'   # 'reinforce' or 'ppo'
     # 'reinforce': REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
     # 'ppo':       PPO-Clip + GAE (DANIEL 전용, 논문 알고리즘)
 
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS                = 1000       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 3       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        BATCH_SIZE            = 64       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 20         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
@@ -36,8 +36,8 @@ if __name__ == "__main__":
         NORMALIZE_ADVANTAGE = False        # GAE 내부에서 정규화
     else:  # 'reinforce'
         EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
-        BATCH_SIZE            = 3
-        POMO_SIZE             = 2
+        BATCH_SIZE            = 16
+        POMO_SIZE             = 8
         VALIDATION_INTERVAL   = 20          # ← 매 epoch 확인 (원래: 5)
         VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
@@ -157,7 +157,7 @@ if __name__ == "__main__":
          'max_succs': 5,   # activity당 최대 후행 작업 수 (tensor 패딩 크기)
          'max_mutex': 2,  # activity당 최대 동시 불가 작업 수 (tensor 패딩 크기)
          'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
-         'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
+         'due_date_tightness': 1.2,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
          'objective': OBJECTIVE,
          'debug_env': DEBUG_ENV,
          'state_mode': 'daniel',
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     # 트레이너 파라미터 설정
     trainer_params = {
         'epochs': EPOCHS,
-        'accumulation_steps': 8,
+        'accumulation_steps': 1,
         'grad_clip_norm': 1.0,
         'entropy_coef': ENTROPY_COEF if USE_ENTROPY_REG else 0.0,
         'baseline_type': BASELINE_TYPE,

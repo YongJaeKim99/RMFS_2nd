@@ -1,0 +1,1 @@
+{"_wandb":{"runtime":23},"_timestamp":1.7714224808037543e+09,"_step":8,"_runtime":23.7904742,"val/improvement_pct":0,"val/best_improvement_pct":0,"train/tardiness":6085.703125,"epoch_time":2.446856737136841,"train/best_tardiness":5959.1953125,"val/tardiness":5874.73974609375,"train/loss":7.6352604375e+06,"val/best_tardiness":5874.73974609375}

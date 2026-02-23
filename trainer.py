@@ -312,7 +312,8 @@ class Scheduling_Trainer:
         # PPO: N_r 에피소드마다 새 학습 데이터 생성
         ppo_problem = None
 
-        for epoch in range(start_epoch, end_epoch+1):
+        try:
+          for epoch in range(start_epoch, end_epoch+1):
             epoch_start_time = time.time()
 
             # 학습 수행
@@ -327,19 +328,19 @@ class Scheduling_Trainer:
             train_obj_avg = -train_reward_avg  # Reward는 -objective이므로 부호 반전
             epoch_elapsed_time = time.time() - epoch_start_time
             print(f"epoch: {epoch}, loss: {train_loss_avg:.4f}, reward: {train_reward_avg:.4f}, {objective_name}: {train_obj_avg:.4f}, time: {epoch_elapsed_time:.2f}s")
-            
+
             # Train score 업데이트
             if train_obj_avg < best_train_score:
                 best_train_score = train_obj_avg
-            
+
             # WandB 로깅 (Train)
             wandb_log_dict = {
-                "train/loss": train_loss_avg, 
+                "train/loss": train_loss_avg,
                 "train/" + objective_name: train_obj_avg,
                 "train/best_" + objective_name: best_train_score,
                 "epoch_time": epoch_elapsed_time
             }
-            
+
             # Validation 실행 (validation_interval 마다)
             val_obj_avg = None
             if use_validation and epoch % validation_interval == 0:
@@ -347,7 +348,7 @@ class Scheduling_Trainer:
                 val_start_time = time.time()
                 val_obj_avg = self._eval_validation(validation_batch_size, validation_pomo_size)
                 val_elapsed_time = time.time() - val_start_time
-                
+
                 # 개선율 계산 (초기값 대비)
                 if initial_val_score is not None and initial_val_score > 0:
                     val_improvement_pct = ((initial_val_score - val_obj_avg) / initial_val_score) * 100
@@ -355,9 +356,9 @@ class Scheduling_Trainer:
                 else:
                     val_improvement_pct = 0.0
                     best_improvement_pct = 0.0
-                
+
                 print(f"  ✅ Validation {objective_name}: {val_obj_avg:.4f} ({val_improvement_pct:+.2f}%), time: {val_elapsed_time:.2f}s")
-                
+
                 # Validation score 업데이트
                 if val_obj_avg < best_val_score:
                     best_val_score = val_obj_avg
@@ -380,17 +381,17 @@ class Scheduling_Trainer:
                             'model_old_state_dict': self.model_old.state_dict() if self.algorithm_type == 'ppo' else None,
                         }, best_model_path)
                         print(f"  🏆 Best Model 저장: {best_model_path} (Val {objective_name}: {val_obj_avg:.4f})")
-                
+
                 # WandB 로깅 (Validation)
                 wandb_log_dict["val/" + objective_name] = val_obj_avg
                 wandb_log_dict["val/best_" + objective_name] = best_val_score
                 wandb_log_dict["val/improvement_pct"] = val_improvement_pct
                 wandb_log_dict["val/best_improvement_pct"] = best_improvement_pct
-            
+
             # WandB 로깅
             if self.use_wandb:
                 wandb.log(wandb_log_dict, step=epoch)
-                
+
             # 체크포인트 저장 (주기적으로)
             if epoch % 20 == 0 and self.checkpoint_dir is not None:
                 ckpt_path = os.path.join(self.checkpoint_dir, f"epoch{epoch}.pt")
@@ -409,7 +410,7 @@ class Scheduling_Trainer:
                     'model_old_state_dict': self.model_old.state_dict() if self.algorithm_type == 'ppo' else None,
                 }, ckpt_path)
                 print(f"  💾 체크포인트 저장: {ckpt_path}")
-                
+
                 if self.use_wandb:
                     artifact = wandb.Artifact(
                         name=f"model_epoch_{epoch}",
@@ -417,7 +418,10 @@ class Scheduling_Trainer:
                     )
                     artifact.add_file(ckpt_path)
                     wandb.log_artifact(artifact)
-        
+
+        except KeyboardInterrupt:
+            print(f"\n\n⚠️ Ctrl+C 감지! Epoch {epoch}에서 학습을 중단합니다.")
+
         # 최종 Best Model 정보 출력
         if use_validation and best_model_epoch > 0:
             print(f"\n🏆 Best Model: Epoch {best_model_epoch}, Val {objective_name}: {best_val_score:.4f}")

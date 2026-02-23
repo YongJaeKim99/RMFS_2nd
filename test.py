@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["RL"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
 
     # GA 설정
     GA_POPULATION_SIZE = 50
