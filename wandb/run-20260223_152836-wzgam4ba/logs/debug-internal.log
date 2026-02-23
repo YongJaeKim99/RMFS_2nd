@@ -1,0 +1,61 @@
+{"time":"2026-02-23T15:28:36.2140037+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260223_152836-wzgam4ba\\logs\\debug-core.log"}
+{"time":"2026-02-23T15:28:36.7618289+09:00","level":"INFO","msg":"created new stream","id":"wzgam4ba"}
+{"time":"2026-02-23T15:28:36.7618289+09:00","level":"INFO","msg":"stream: started","id":"wzgam4ba"}
+{"time":"2026-02-23T15:28:36.7618289+09:00","level":"INFO","msg":"handler: started","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:28:36.7618289+09:00","level":"INFO","msg":"sender: started","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:28:36.7618289+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:28:37.1601925+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-23T15:28:52.7104872+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:29:07.4821114+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:29:22.6316339+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:29:37.9851306+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:29:52.4156227+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:30:07.6239759+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:30:22.523887+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:30:37.3444022+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:30:52.5458848+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:31:07.501602+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:31:22.5492753+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:31:37.3899816+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:31:52.4582698+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:32:07.6497662+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:32:23.1276333+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:32:37.5955179+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:32:52.7002223+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:33:07.5650948+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:33:22.3912891+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:33:37.6682331+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:33:52.7495322+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:34:07.7852895+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:34:22.6059311+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:34:37.5882559+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:34:52.7494601+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:35:07.7190769+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:35:22.7321059+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:35:37.4897393+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:35:52.4319784+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:36:07.3952826+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:36:22.740826+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:36:37.5568171+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:36:52.3115051+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:37:07.6707956+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:37:22.4091924+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:37:37.6745598+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:37:52.5141506+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:38:07.7519409+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:38:22.7592535+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:38:37.4020296+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:38:52.5723081+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:39:07.8400417+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:39:22.3552849+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:39:37.6013988+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:39:52.2967529+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T15:40:04.4697932+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-23T15:40:04.4697932+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-23T15:40:05.5845029+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-23T15:40:05.8822759+09:00","level":"INFO","msg":"stream: closing","id":"wzgam4ba"}
+{"time":"2026-02-23T15:40:05.8822759+09:00","level":"WARN","msg":"sender: received Exit record more than once, ignoring"}
+{"time":"2026-02-23T15:40:05.8822759+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:40:05.8822759+09:00","level":"INFO","msg":"sender: closed","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:40:05.8822759+09:00","level":"INFO","msg":"handler: closed","stream_id":"wzgam4ba"}
+{"time":"2026-02-23T15:40:05.8827928+09:00","level":"INFO","msg":"stream: closed","id":"wzgam4ba"}

@@ -99,7 +99,10 @@ class SchedulingEnv:
                 "Makespan의 경우 FJSP 논문의 op_ct_lb 방식을 참고하세요."
             )
 
-        # Stepwise reward: ATC scaling parameter (Pinedo Section 7.3)
+        # Tardiness 추정 방식: 'simple' (DANIEL-style forward DAG + min_pt) 또는 'sbh' (7-Phase SBH)
+        self.tardiness_est_type = env_params.get('tardiness_est_type', 'simple')
+
+        # Stepwise reward: ATC scaling parameter (Pinedo Section 7.3, sbh 모드 전용)
         self._atc_scaling = env_params.get('atc_scaling', 2.0)
 
         # 문제 데이터 (reset에서 초기화)
@@ -209,7 +212,7 @@ class SchedulingEnv:
         # Step-wise reward 초기화
         # ========================================
         if self.reward_type == 'stepwise':
-            self.estimated_tardiness = self._compute_estimated_tardiness()
+            self.estimated_tardiness = self._estimate_tardiness()
             self.step_reward = torch.zeros(self.batch_size, device=self.device)
 
     def _initialize_action_space(self):
@@ -421,7 +424,7 @@ class SchedulingEnv:
             if all_done:
                 new_est = self._get_obj()  # Terminal: 실제 tardiness
             else:
-                new_est = self._compute_estimated_tardiness()
+                new_est = self._estimate_tardiness()
             self.step_reward = prev_est - new_est  # (B,) positive = improvement
             self.estimated_tardiness = new_est
 
@@ -482,7 +485,7 @@ class SchedulingEnv:
             if all_done:
                 new_est = self._get_obj()  # Terminal: 실제 tardiness
             else:
-                new_est = self._compute_estimated_tardiness()
+                new_est = self._estimate_tardiness()
             self.step_reward = prev_est - new_est  # (B,) positive = improvement
             self.estimated_tardiness = new_est
 
@@ -726,6 +729,128 @@ class SchedulingEnv:
         # 프로젝트 완료 상태 업데이트 (벡터 연산)
         self.project_completed[batch_idxs] = proj_all_completed
         
+    def _estimate_tardiness(self):
+        """tardiness_est_type에 따라 적절한 추정 함수 호출"""
+        if self.tardiness_est_type == 'simple':
+            return self._compute_estimated_tardiness_simple()
+        else:
+            return self._compute_estimated_tardiness()
+
+    def _compute_estimated_tardiness_simple(self):
+        """
+        DANIEL 논문 스타일 단순 Tardiness 추정 (forward DAG + min_pt lower bound)
+
+        DANIEL 원본에서 makespan을 추정하는 방식을 tardiness로 적응:
+          - Scheduled activity: actual end_time (확정값)
+          - Unscheduled activity: C_lb(a) = max(release, max(C_lb(preds))) + min_k(p_ak)
+          - Project completion = max(C_lb) per project
+          - Tardiness = sum(max(0, proj_completion - due_date))
+
+        min_pt를 사용하므로 리소스 무한 가정 + 최선 팀 배정 → 진짜 lower bound.
+        추가로 backward DAG pass로 local_due, remaining_after도 계산하여 피처 캐시에 저장.
+
+        Returns:
+            estimated_tardiness: (batch_size,) - 추정 총 tardiness (lower bound)
+        """
+        B, N = self.batch_size, self.max_N_A
+        device = self.device
+
+        valid = torch.arange(N, device=device).unsqueeze(0) < self.num_activities.unsqueeze(1)  # (B, N)
+
+        # min_pt per activity (eligible 팀 중 최소 처리시간)
+        elig = self.activity_eligible_teams  # (B, N, T)
+        pt = self.activity_team_duration     # (B, N, T)
+        min_fill = torch.where(elig, pt, torch.full_like(pt, float('inf')))
+        min_pt = min_fill.min(dim=2)[0]  # (B, N)
+        min_pt = torch.where(min_pt.isinf(), torch.zeros_like(min_pt), min_pt)
+
+        # Activity별 프로젝트 release time / due date
+        proj_ids = self.activity_project.clamp(min=0)  # (B, N)
+        release = torch.gather(self.project_release_time, 1, proj_ids)  # (B, N)
+        due_date = torch.gather(self.project_due_date, 1, proj_ids)    # (B, N)
+
+        # ============================
+        # Forward DAG → completion LB
+        # ============================
+        completion_lb = torch.where(
+            self.activity_started,
+            self.activity_end_time,
+            release + min_pt
+        )
+        completion_lb = torch.where(valid, completion_lb, torch.zeros_like(completion_lb))
+
+        preds = self.activity_predecessors  # (B, N, max_preds)
+        valid_pred = preds >= 0
+        safe_preds = preds.clamp(min=0)
+        max_preds_dim = preds.shape[2]
+
+        for _ in range(self.N_A_max):
+            pred_comp = torch.gather(
+                completion_lb, 1, safe_preds.reshape(B, -1)
+            ).reshape(B, N, max_preds_dim)
+            pred_comp = torch.where(valid_pred, pred_comp, torch.zeros_like(pred_comp))
+            max_pred_comp = pred_comp.max(dim=2)[0]
+
+            new_comp = torch.where(
+                self.activity_started,
+                self.activity_end_time,
+                torch.max(release, max_pred_comp) + min_pt
+            )
+            new_comp = torch.where(valid, new_comp, torch.zeros_like(new_comp))
+
+            if torch.equal(new_comp, completion_lb):
+                break
+            completion_lb = new_comp
+
+        # ============================
+        # Backward DAG → tail → local due (피처용)
+        # ============================
+        succs = self.activity_successors  # (B, N, max_succs)
+        valid_succ = succs >= 0
+        safe_succs = succs.clamp(min=0)
+
+        tail = torch.where(valid, min_pt.clone(), torch.zeros(B, N, device=device))
+        max_succs_dim = succs.shape[2]
+
+        for _ in range(self.N_A_max):
+            succ_tail = torch.gather(
+                tail, 1, safe_succs.reshape(B, -1)
+            ).reshape(B, N, max_succs_dim)
+            succ_tail = torch.where(valid_succ, succ_tail, torch.zeros_like(succ_tail))
+            max_succ_tail = succ_tail.max(dim=2)[0]
+
+            new_tail = min_pt + max_succ_tail
+            new_tail = torch.where(valid, new_tail, torch.zeros_like(new_tail))
+
+            if torch.equal(new_tail, tail):
+                break
+            tail = new_tail
+
+        remaining_after = tail - min_pt  # (B, N)
+        local_due = due_date - remaining_after  # (B, N)
+
+        # 캐싱 (_get_state_daniel 피처 재사용)
+        self._cached_adj_completion = completion_lb     # (B, N)
+        self._cached_local_due = local_due              # (B, N)
+        self._cached_remaining_after = remaining_after  # (B, N)
+
+        # ============================
+        # Project completion → Tardiness
+        # ============================
+        proj_range = torch.arange(self.N_P, device=device)
+        proj_mask = (self.activity_project.unsqueeze(1) == proj_range.view(1, -1, 1)) & valid.unsqueeze(1)
+
+        comp_3d = completion_lb.unsqueeze(1).expand(-1, self.N_P, -1)
+        masked = torch.where(proj_mask, comp_3d, torch.tensor(-float('inf'), device=device))
+        proj_completion = masked.max(dim=2)[0]
+        proj_completion = torch.where(
+            torch.isinf(proj_completion),
+            torch.zeros_like(proj_completion),
+            proj_completion
+        )
+
+        return torch.clamp(proj_completion - self.project_due_date, min=0.0).sum(dim=1)  # (B,)
+
     def _compute_estimated_tardiness(self):
         """
         Shifting Bottleneck Heuristic (Pinedo 7.3) 기반 Tardiness 추정 (step-wise reward용)
@@ -1160,16 +1285,24 @@ class SchedulingEnv:
             local_due = self._cached_local_due               # (B, N)
             remaining_after = self._cached_remaining_after   # (B, N)
         else:
-            # Phase 1: Forward DAG relaxation (기존 f6 로직)
-            # preds / valid_pred_mask / safe_preds 는 위에서 이미 계산됨 (재사용)
+            # Phase 1-2 인라인 계산 (sparse reward 등 캐시 없을 때)
+            # simple 모드: min_pt (DANIEL-style lower bound)
+            # sbh 모드: avg_pt
             elig_mask_f = self.activity_eligible_teams  # (B, N, T)
-            elig_count_f = elig_mask_f.sum(dim=2).float().clamp(min=1)  # (B, N)
-            avg_pt_f = (self.activity_team_duration * elig_mask_f.float()).sum(dim=2) / elig_count_f  # (B, N)
+            if self.tardiness_est_type == 'simple':
+                min_fill_f = torch.where(elig_mask_f, self.activity_team_duration,
+                                         torch.full_like(self.activity_team_duration, float('inf')))
+                base_pt = min_fill_f.min(dim=2)[0]  # (B, N)
+                base_pt = torch.where(base_pt.isinf(), torch.zeros_like(base_pt), base_pt)
+            else:
+                elig_count_f = elig_mask_f.sum(dim=2).float().clamp(min=1)
+                base_pt = (self.activity_team_duration * elig_mask_f.float()).sum(dim=2) / elig_count_f
 
+            # Forward DAG relaxation
             completion_lb = torch.where(
                 self.activity_started,
                 self.activity_end_time,
-                act_release + avg_pt_f
+                act_release + base_pt
             )
             completion_lb = torch.where(valid_act, completion_lb, torch.zeros_like(completion_lb))
             max_preds_dim = preds.shape[2]
@@ -1182,7 +1315,7 @@ class SchedulingEnv:
                 new_comp = torch.where(
                     self.activity_started,
                     self.activity_end_time,
-                    torch.max(act_release, max_pred_comp) + avg_pt_f
+                    torch.max(act_release, max_pred_comp) + base_pt
                 )
                 new_comp = torch.where(valid_act, new_comp, torch.zeros_like(new_comp))
                 if torch.equal(new_comp, completion_lb):
@@ -1190,12 +1323,12 @@ class SchedulingEnv:
                 completion_lb = new_comp
             best_comp = completion_lb  # (B, N)
 
-            # Phase 2: Backward DAG → tail length → local due date
+            # Backward DAG → tail length → local due date
             succs_f = self.activity_successors  # (B, N, max_succs)
             valid_succ_f = succs_f >= 0
             safe_succs_f = succs_f.clamp(min=0)
 
-            tail = torch.where(valid_act, avg_pt_f.clone(), torch.zeros(B, N, device=device))
+            tail = torch.where(valid_act, base_pt.clone(), torch.zeros(B, N, device=device))
             max_succs_dim = succs_f.shape[2]
             for _ in range(self.N_A_max):
                 succ_tail = torch.gather(
@@ -1203,13 +1336,13 @@ class SchedulingEnv:
                 ).reshape(B, N, max_succs_dim)
                 succ_tail = torch.where(valid_succ_f, succ_tail, torch.zeros_like(succ_tail))
                 max_succ_tail = succ_tail.max(dim=2)[0]  # (B, N)
-                new_tail = avg_pt_f + max_succ_tail
+                new_tail = base_pt + max_succ_tail
                 new_tail = torch.where(valid_act, new_tail, torch.zeros_like(new_tail))
                 if torch.equal(new_tail, tail):
                     break
                 tail = new_tail
 
-            remaining_after = tail - avg_pt_f  # (B, N) activity 이후 남은 critical path 길이
+            remaining_after = tail - base_pt  # (B, N)
             act_due = torch.gather(self.project_due_date, 1, act_proj_safe)  # (B, N)
             local_due = act_due - remaining_after  # (B, N)
 

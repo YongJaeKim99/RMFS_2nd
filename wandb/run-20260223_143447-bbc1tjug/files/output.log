@@ -1,0 +1,376 @@
+epoch: 0 (초기 상태 - 학습 전)
+  🔍 초기 Validation 실행 중... (학습 전)
+  ✅ Initial Validation tardiness: 8653.2197, time: 2.01s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch0.pt
+epoch: 1
+epoch: 1, loss: 3913653.7500, reward: -6260.1250, tardiness: 6260.1250, time: 20.39s
+epoch: 2
+epoch: 2, loss: 3591392.1875, reward: -5958.8438, tardiness: 5958.8438, time: 19.90s
+epoch: 3
+epoch: 3, loss: 3706078.3125, reward: -6104.5000, tardiness: 6104.5000, time: 19.88s
+epoch: 4
+epoch: 4, loss: 3548130.6875, reward: -5967.9219, tardiness: 5967.9219, time: 19.05s
+epoch: 5
+epoch: 5, loss: 3674449.6875, reward: -5993.5625, tardiness: 5993.5625, time: 19.53s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 4427.0601 (+48.84%), time: 1.75s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 4427.0601)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch5.pt
+epoch: 6
+epoch: 6, loss: 3458328.3750, reward: -5819.3750, tardiness: 5819.3750, time: 19.54s
+epoch: 7
+epoch: 7, loss: 3669091.8750, reward: -5978.6094, tardiness: 5978.6094, time: 19.45s
+epoch: 8
+epoch: 8, loss: 3349470.0000, reward: -5799.7031, tardiness: 5799.7031, time: 19.96s
+epoch: 9
+epoch: 9, loss: 3439778.9375, reward: -5758.1875, tardiness: 5758.1875, time: 21.00s
+epoch: 10
+epoch: 10, loss: 3404716.0625, reward: -5785.3750, tardiness: 5785.3750, time: 20.53s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2565.8000 (+70.35%), time: 1.97s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2565.8000)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch10.pt
+epoch: 11
+epoch: 11, loss: 3407712.3750, reward: -5743.1875, tardiness: 5743.1875, time: 19.53s
+epoch: 12
+epoch: 12, loss: 3582833.5000, reward: -5882.2031, tardiness: 5882.2031, time: 20.17s
+epoch: 13
+epoch: 13, loss: 3382026.4375, reward: -5702.0625, tardiness: 5702.0625, time: 21.60s
+epoch: 14
+epoch: 14, loss: 3492529.0625, reward: -5814.5781, tardiness: 5814.5781, time: 21.37s
+epoch: 15
+epoch: 15, loss: 3660098.3750, reward: -5915.0000, tardiness: 5915.0000, time: 21.39s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2508.8401 (+71.01%), time: 2.63s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2508.8401)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch15.pt
+epoch: 16
+epoch: 16, loss: 3293880.8750, reward: -5628.3750, tardiness: 5628.3750, time: 21.10s
+epoch: 17
+epoch: 17, loss: 3678146.6875, reward: -5961.6875, tardiness: 5961.6875, time: 20.59s
+epoch: 18
+epoch: 18, loss: 3643811.6250, reward: -5905.0469, tardiness: 5905.0469, time: 20.54s
+epoch: 19
+epoch: 19, loss: 3827079.1875, reward: -6010.5156, tardiness: 6010.5156, time: 21.11s
+epoch: 20
+epoch: 20, loss: 3478123.0625, reward: -5814.7188, tardiness: 5814.7188, time: 21.43s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2409.6201 (+72.15%), time: 2.53s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2409.6201)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch20.pt
+epoch: 21
+epoch: 21, loss: 3843604.7500, reward: -6027.5938, tardiness: 6027.5938, time: 20.97s
+epoch: 22
+epoch: 22, loss: 3518906.1875, reward: -5750.4531, tardiness: 5750.4531, time: 22.46s
+epoch: 23
+epoch: 23, loss: 3326394.1875, reward: -5664.0000, tardiness: 5664.0000, time: 24.02s
+epoch: 24
+epoch: 24, loss: 3527617.3750, reward: -5793.5625, tardiness: 5793.5625, time: 24.17s
+epoch: 25
+epoch: 25, loss: 3343549.5000, reward: -5660.6406, tardiness: 5660.6406, time: 21.64s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2473.0601 (+71.42%), time: 2.70s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch25.pt
+epoch: 26
+epoch: 26, loss: 3509447.6875, reward: -5765.6406, tardiness: 5765.6406, time: 21.02s
+epoch: 27
+epoch: 27, loss: 3583050.0625, reward: -5836.6406, tardiness: 5836.6406, time: 20.68s
+epoch: 28
+epoch: 28, loss: 3469677.3125, reward: -5727.6406, tardiness: 5727.6406, time: 21.49s
+epoch: 29
+epoch: 29, loss: 3281225.8750, reward: -5634.9219, tardiness: 5634.9219, time: 22.42s
+epoch: 30
+epoch: 30, loss: 3536182.3750, reward: -5760.5000, tardiness: 5760.5000, time: 19.67s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2369.9199 (+72.61%), time: 2.09s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2369.9199)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch30.pt
+epoch: 31
+epoch: 31, loss: 3761327.5625, reward: -6001.5156, tardiness: 6001.5156, time: 20.03s
+epoch: 32
+epoch: 32, loss: 3437022.8125, reward: -5716.2812, tardiness: 5716.2812, time: 19.70s
+epoch: 33
+epoch: 33, loss: 3570627.3750, reward: -5850.0312, tardiness: 5850.0312, time: 19.94s
+epoch: 34
+epoch: 34, loss: 3360188.6250, reward: -5644.4219, tardiness: 5644.4219, time: 19.54s
+epoch: 35
+epoch: 35, loss: 3169303.4375, reward: -5491.5781, tardiness: 5491.5781, time: 20.86s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2367.9199 (+72.64%), time: 1.98s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2367.9199)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch35.pt
+epoch: 36
+epoch: 36, loss: 3637784.9375, reward: -5850.7188, tardiness: 5850.7188, time: 20.31s
+epoch: 37
+epoch: 37, loss: 3638830.2500, reward: -5874.1094, tardiness: 5874.1094, time: 20.94s
+epoch: 38
+epoch: 38, loss: 3776309.1875, reward: -5919.9531, tardiness: 5919.9531, time: 20.57s
+epoch: 39
+epoch: 39, loss: 3494411.1250, reward: -5722.3906, tardiness: 5722.3906, time: 20.05s
+epoch: 40
+epoch: 40, loss: 3512983.4375, reward: -5743.6250, tardiness: 5743.6250, time: 20.62s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2375.2000 (+72.55%), time: 2.11s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch40.pt
+epoch: 41
+epoch: 41, loss: 3194429.8125, reward: -5457.1719, tardiness: 5457.1719, time: 17.89s
+epoch: 42
+epoch: 42, loss: 3148401.4375, reward: -5369.2656, tardiness: 5369.2656, time: 17.49s
+epoch: 43
+epoch: 43, loss: 3156824.5000, reward: -5375.4844, tardiness: 5375.4844, time: 17.80s
+epoch: 44
+epoch: 44, loss: 3184588.1875, reward: -5391.2031, tardiness: 5391.2031, time: 18.15s
+epoch: 45
+epoch: 45, loss: 3002241.7500, reward: -5313.2500, tardiness: 5313.2500, time: 17.47s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2353.6201 (+72.80%), time: 1.82s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2353.6201)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch45.pt
+epoch: 46
+epoch: 46, loss: 3163419.6875, reward: -5397.2500, tardiness: 5397.2500, time: 17.74s
+epoch: 47
+epoch: 47, loss: 2999404.5000, reward: -5291.1875, tardiness: 5291.1875, time: 17.39s
+epoch: 48
+epoch: 48, loss: 3321458.1250, reward: -5547.5625, tardiness: 5547.5625, time: 17.62s
+epoch: 49
+epoch: 49, loss: 3415778.0000, reward: -5602.4062, tardiness: 5602.4062, time: 18.10s
+epoch: 50
+epoch: 50, loss: 3247235.3125, reward: -5517.7969, tardiness: 5517.7969, time: 18.88s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2454.5200 (+71.63%), time: 2.75s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch50.pt
+epoch: 51
+epoch: 51, loss: 3463639.4375, reward: -5679.0156, tardiness: 5679.0156, time: 18.97s
+epoch: 52
+epoch: 52, loss: 3529937.8750, reward: -5651.0312, tardiness: 5651.0312, time: 18.94s
+epoch: 53
+epoch: 53, loss: 3219306.9375, reward: -5488.6094, tardiness: 5488.6094, time: 18.83s
+epoch: 54
+epoch: 54, loss: 3772648.1250, reward: -5860.4219, tardiness: 5860.4219, time: 18.80s
+epoch: 55
+epoch: 55, loss: 3532014.3750, reward: -5640.5000, tardiness: 5640.5000, time: 18.72s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2447.3601 (+71.72%), time: 2.72s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch55.pt
+epoch: 56
+epoch: 56, loss: 3196065.0000, reward: -5503.9062, tardiness: 5503.9062, time: 18.97s
+epoch: 57
+epoch: 57, loss: 3285819.1250, reward: -5504.5312, tardiness: 5504.5312, time: 19.12s
+epoch: 58
+epoch: 58, loss: 3088838.3750, reward: -5409.2656, tardiness: 5409.2656, time: 18.93s
+epoch: 59
+epoch: 59, loss: 3258198.3125, reward: -5507.2188, tardiness: 5507.2188, time: 18.82s
+epoch: 60
+epoch: 60, loss: 3246568.5000, reward: -5543.2656, tardiness: 5543.2656, time: 18.93s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2262.8401 (+73.85%), time: 2.57s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2262.8401)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch60.pt
+epoch: 61
+epoch: 61, loss: 3619346.5625, reward: -5795.2812, tardiness: 5795.2812, time: 19.39s
+epoch: 62
+epoch: 62, loss: 3326980.4375, reward: -5557.1562, tardiness: 5557.1562, time: 19.50s
+epoch: 63
+epoch: 63, loss: 3529510.8750, reward: -5779.2969, tardiness: 5779.2969, time: 19.92s
+epoch: 64
+epoch: 64, loss: 3566600.7500, reward: -5756.6250, tardiness: 5756.6250, time: 19.49s
+epoch: 65
+epoch: 65, loss: 3755448.3125, reward: -5867.9375, tardiness: 5867.9375, time: 19.69s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2264.6599 (+73.83%), time: 2.69s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch65.pt
+epoch: 66
+epoch: 66, loss: 3398573.5625, reward: -5662.2656, tardiness: 5662.2656, time: 19.65s
+epoch: 67
+epoch: 67, loss: 3118194.8750, reward: -5464.1719, tardiness: 5464.1719, time: 22.83s
+epoch: 68
+epoch: 68, loss: 3468170.6875, reward: -5677.6406, tardiness: 5677.6406, time: 21.80s
+epoch: 69
+epoch: 69, loss: 3445150.3125, reward: -5699.1562, tardiness: 5699.1562, time: 21.62s
+epoch: 70
+epoch: 70, loss: 3175320.9375, reward: -5466.2031, tardiness: 5466.2031, time: 20.21s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2249.1599 (+74.01%), time: 2.60s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2249.1599)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch70.pt
+epoch: 71
+epoch: 71, loss: 3369949.0000, reward: -5656.2656, tardiness: 5656.2656, time: 19.61s
+epoch: 72
+epoch: 72, loss: 3782368.1250, reward: -5892.6562, tardiness: 5892.6562, time: 19.52s
+epoch: 73
+epoch: 73, loss: 3635855.5000, reward: -5819.1719, tardiness: 5819.1719, time: 19.45s
+epoch: 74
+epoch: 74, loss: 3172814.8125, reward: -5465.8125, tardiness: 5465.8125, time: 19.91s
+epoch: 75
+epoch: 75, loss: 3212584.1250, reward: -5514.9375, tardiness: 5514.9375, time: 19.64s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2225.5801 (+74.28%), time: 2.61s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2225.5801)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch75.pt
+epoch: 76
+epoch: 76, loss: 3245457.1250, reward: -5536.5312, tardiness: 5536.5312, time: 19.74s
+epoch: 77
+epoch: 77, loss: 3351530.6250, reward: -5641.7969, tardiness: 5641.7969, time: 19.53s
+epoch: 78
+epoch: 78, loss: 3280429.6250, reward: -5528.9219, tardiness: 5528.9219, time: 19.57s
+epoch: 79
+epoch: 79, loss: 3154190.4375, reward: -5471.6719, tardiness: 5471.6719, time: 19.60s
+epoch: 80
+epoch: 80, loss: 3318199.0625, reward: -5567.3125, tardiness: 5567.3125, time: 19.47s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2176.1201 (+74.85%), time: 2.80s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2176.1201)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch80.pt
+epoch: 81
+epoch: 81, loss: 3115646.6875, reward: -5330.1719, tardiness: 5330.1719, time: 18.94s
+epoch: 82
+epoch: 82, loss: 3131227.5625, reward: -5401.8125, tardiness: 5401.8125, time: 19.04s
+epoch: 83
+epoch: 83, loss: 2907767.8750, reward: -5147.6719, tardiness: 5147.6719, time: 18.87s
+epoch: 84
+epoch: 84, loss: 3007171.9375, reward: -5307.2500, tardiness: 5307.2500, time: 19.57s
+epoch: 85
+epoch: 85, loss: 3079592.1875, reward: -5357.7344, tardiness: 5357.7344, time: 19.19s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2164.8601 (+74.98%), time: 2.68s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2164.8601)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch85.pt
+epoch: 86
+epoch: 86, loss: 2935571.9375, reward: -5233.4219, tardiness: 5233.4219, time: 20.34s
+epoch: 87
+epoch: 87, loss: 2925003.6250, reward: -5202.3594, tardiness: 5202.3594, time: 38.41s
+epoch: 88
+epoch: 88, loss: 2859727.2500, reward: -5166.2344, tardiness: 5166.2344, time: 38.12s
+epoch: 89
+epoch: 89, loss: 2952864.8750, reward: -5209.2812, tardiness: 5209.2812, time: 36.81s
+epoch: 90
+epoch: 90, loss: 3170555.3125, reward: -5376.5781, tardiness: 5376.5781, time: 37.26s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2163.7200 (+75.00%), time: 6.18s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2163.7200)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch90.pt
+epoch: 91
+epoch: 91, loss: 3012706.8125, reward: -5233.6250, tardiness: 5233.6250, time: 37.12s
+epoch: 92
+epoch: 92, loss: 3061648.3750, reward: -5322.3594, tardiness: 5322.3594, time: 43.88s
+epoch: 93
+epoch: 93, loss: 3292736.0625, reward: -5461.8750, tardiness: 5461.8750, time: 35.53s
+epoch: 94
+epoch: 94, loss: 3119468.1875, reward: -5344.2969, tardiness: 5344.2969, time: 21.93s
+epoch: 95
+epoch: 95, loss: 3140310.2500, reward: -5318.7188, tardiness: 5318.7188, time: 20.44s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2183.9199 (+74.76%), time: 2.09s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch95.pt
+epoch: 96
+epoch: 96, loss: 2872859.0625, reward: -5141.6250, tardiness: 5141.6250, time: 20.57s
+epoch: 97
+epoch: 97, loss: 3410937.5625, reward: -5597.5938, tardiness: 5597.5938, time: 20.48s
+epoch: 98
+epoch: 98, loss: 2887261.9375, reward: -5209.1562, tardiness: 5209.1562, time: 20.03s
+epoch: 99
+epoch: 99, loss: 2971078.6250, reward: -5206.3438, tardiness: 5206.3438, time: 20.33s
+epoch: 100
+epoch: 100, loss: 3208476.3125, reward: -5366.8125, tardiness: 5366.8125, time: 20.40s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2182.3799 (+74.78%), time: 2.01s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch100.pt
+epoch: 101
+epoch: 101, loss: 3771622.7500, reward: -6099.0312, tardiness: 6099.0312, time: 25.21s
+epoch: 102
+epoch: 102, loss: 3708201.6875, reward: -6007.5938, tardiness: 6007.5938, time: 26.22s
+epoch: 103
+epoch: 103, loss: 3457241.7500, reward: -5890.4375, tardiness: 5890.4375, time: 25.74s
+epoch: 104
+epoch: 104, loss: 3512420.5625, reward: -5889.3281, tardiness: 5889.3281, time: 29.15s
+epoch: 105
+epoch: 105, loss: 3544097.3750, reward: -5921.5781, tardiness: 5921.5781, time: 28.72s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2202.9600 (+74.54%), time: 3.30s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch105.pt
+epoch: 106
+epoch: 106, loss: 3883715.1250, reward: -6164.6406, tardiness: 6164.6406, time: 27.58s
+epoch: 107
+epoch: 107, loss: 3862329.2500, reward: -6193.6719, tardiness: 6193.6719, time: 26.32s
+epoch: 108
+epoch: 108, loss: 3594172.5000, reward: -5972.2031, tardiness: 5972.2031, time: 25.17s
+epoch: 109
+epoch: 109, loss: 4111251.4375, reward: -6364.8594, tardiness: 6364.8594, time: 25.00s
+epoch: 110
+epoch: 110, loss: 3371147.2500, reward: -5765.8125, tardiness: 5765.8125, time: 24.51s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2211.5200 (+74.44%), time: 2.13s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch110.pt
+epoch: 111
+epoch: 111, loss: 3724030.3750, reward: -6103.5938, tardiness: 6103.5938, time: 25.10s
+epoch: 112
+epoch: 112, loss: 3424634.5625, reward: -5816.4375, tardiness: 5816.4375, time: 25.29s
+epoch: 113
+epoch: 113, loss: 3445783.1875, reward: -5856.7969, tardiness: 5856.7969, time: 24.59s
+epoch: 114
+epoch: 114, loss: 3777974.6875, reward: -6105.2812, tardiness: 6105.2812, time: 25.00s
+epoch: 115
+epoch: 115, loss: 3800924.0000, reward: -6096.7969, tardiness: 6096.7969, time: 25.84s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2206.9600 (+74.50%), time: 2.80s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch115.pt
+epoch: 116
+epoch: 116, loss: 3319384.8750, reward: -5768.2188, tardiness: 5768.2188, time: 25.94s
+epoch: 117
+epoch: 117, loss: 3615661.2500, reward: -5964.8438, tardiness: 5964.8438, time: 27.03s
+epoch: 118
+epoch: 118, loss: 3850273.6875, reward: -6131.5469, tardiness: 6131.5469, time: 26.51s
+epoch: 119
+epoch: 119, loss: 3461221.1875, reward: -5835.2969, tardiness: 5835.2969, time: 28.18s
+epoch: 120
+epoch: 120, loss: 3297574.7500, reward: -5768.1875, tardiness: 5768.1875, time: 26.70s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2161.8401 (+75.02%), time: 2.99s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2161.8401)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch120.pt
+epoch: 121
+epoch: 121, loss: 3359393.1250, reward: -5648.7969, tardiness: 5648.7969, time: 23.68s
+epoch: 122
+epoch: 122, loss: 3162255.0625, reward: -5479.3594, tardiness: 5479.3594, time: 23.13s
+epoch: 123
+epoch: 123, loss: 3552255.0625, reward: -5846.3750, tardiness: 5846.3750, time: 22.71s
+epoch: 124
+epoch: 124, loss: 3571786.3125, reward: -5827.0312, tardiness: 5827.0312, time: 23.05s
+epoch: 125
+epoch: 125, loss: 3476387.4375, reward: -5796.2031, tardiness: 5796.2031, time: 24.04s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2157.8601 (+75.06%), time: 2.98s
+  🏆 Best Model 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\best_model.pt (Val tardiness: 2157.8601)
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch125.pt
+epoch: 126
+epoch: 126, loss: 3510393.5000, reward: -5795.8906, tardiness: 5795.8906, time: 24.54s
+epoch: 127
+epoch: 127, loss: 3156415.0000, reward: -5505.3906, tardiness: 5505.3906, time: 23.38s
+epoch: 128
+epoch: 128, loss: 3385173.4375, reward: -5728.7656, tardiness: 5728.7656, time: 28.76s
+epoch: 129
+epoch: 129, loss: 3325929.0625, reward: -5681.8438, tardiness: 5681.8438, time: 38.68s
+epoch: 130
+epoch: 130, loss: 3180286.5625, reward: -5529.2344, tardiness: 5529.2344, time: 37.25s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2215.5000 (+74.40%), time: 5.87s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch130.pt
+epoch: 131
+epoch: 131, loss: 3229878.8750, reward: -5615.5938, tardiness: 5615.5938, time: 37.98s
+epoch: 132
+epoch: 132, loss: 3335902.4375, reward: -5707.4219, tardiness: 5707.4219, time: 37.69s
+epoch: 133
+epoch: 133, loss: 3400538.1875, reward: -5702.6094, tardiness: 5702.6094, time: 36.01s
+epoch: 134
+epoch: 134, loss: 3480967.6875, reward: -5798.2500, tardiness: 5798.2500, time: 36.05s
+epoch: 135
+epoch: 135, loss: 3726204.4375, reward: -5922.9844, tardiness: 5922.9844, time: 37.98s
+  🔍 Validation 실행 중...
+  ✅ Validation tardiness: 2200.1201 (+74.57%), time: 5.93s
+  💾 체크포인트 저장: ./checkpoints/20260223_143444_tardiness_DANIEL_PPO\epoch135.pt
+epoch: 136
+
+
+⚠️ Ctrl+C 감지! Epoch 136에서 학습을 중단합니다.
+
+🏆 Best Model: Epoch 125, Val tardiness: 2157.8601

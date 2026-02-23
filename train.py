@@ -90,6 +90,10 @@ if __name__ == "__main__":
                             # 'stepwise': 매 step마다 dense reward (DANIEL 논문 방식, tardiness 전용)
     REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
 
+    # Tardiness 추정 방식 (stepwise reward + feature에 사용)
+    TARDINESS_EST_TYPE = 'sbh'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
+                                   # 'sbh': Shifting Bottleneck Heuristic 7-Phase (ATC + contention)
+
     # 디버그 옵션
     DEBUG_ENV = False
     DEBUG_MODEL = False
@@ -166,6 +170,7 @@ if __name__ == "__main__":
          'allow_wait_mutex': ALLOW_WAIT_MUTEX,
          'dominance_rule': DOMINANCE_RULE,
          'reward_type': REWARD_TYPE,
+         'tardiness_est_type': TARDINESS_EST_TYPE,
     }
     '''
     # 큰 사이즈
