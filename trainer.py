@@ -393,7 +393,7 @@ class Scheduling_Trainer:
                 wandb.log(wandb_log_dict, step=epoch)
 
             # 체크포인트 저장 (주기적으로)
-            if epoch % 20 == 0 and self.checkpoint_dir is not None:
+            if epoch % 5 == 0 and self.checkpoint_dir is not None:
                 ckpt_path = os.path.join(self.checkpoint_dir, f"epoch{epoch}.pt")
                 # 모델 가중치와 함께 env_params, model_params, trainer_params, optimizer 상태도 저장
                 torch.save({

@@ -1,0 +1,17 @@
+{"time":"2026-02-23T13:45:35.4334853+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260223_134535-q5bsbpwo\\logs\\debug-core.log"}
+{"time":"2026-02-23T13:45:36.060455+09:00","level":"INFO","msg":"created new stream","id":"q5bsbpwo"}
+{"time":"2026-02-23T13:45:36.060455+09:00","level":"INFO","msg":"stream: started","id":"q5bsbpwo"}
+{"time":"2026-02-23T13:45:36.060455+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:45:36.060455+09:00","level":"INFO","msg":"sender: started","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:45:36.060455+09:00","level":"INFO","msg":"handler: started","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:45:36.4866625+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-23T13:45:51.841097+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:46:04.2916622+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-23T13:46:04.2916622+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-23T13:46:05.1230837+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-23T13:46:05.2952946+09:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading history steps 0-1, summary, console lines 5-11","runtime_seconds":0.1722109}],"total_operations":1}}
+{"time":"2026-02-23T13:46:05.4647545+09:00","level":"INFO","msg":"stream: closing","id":"q5bsbpwo"}
+{"time":"2026-02-23T13:46:05.4647545+09:00","level":"INFO","msg":"handler: closed","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:46:05.4647545+09:00","level":"INFO","msg":"sender: closed","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:46:05.4647545+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"q5bsbpwo"}
+{"time":"2026-02-23T13:46:05.4652566+09:00","level":"INFO","msg":"stream: closed","id":"q5bsbpwo"}

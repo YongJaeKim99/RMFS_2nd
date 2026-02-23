@@ -1,0 +1,21 @@
+{"time":"2026-02-23T13:46:18.3149684+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260223_134618-2n01tf7t\\logs\\debug-core.log"}
+{"time":"2026-02-23T13:46:18.6585612+09:00","level":"INFO","msg":"created new stream","id":"2n01tf7t"}
+{"time":"2026-02-23T13:46:18.6585612+09:00","level":"INFO","msg":"stream: started","id":"2n01tf7t"}
+{"time":"2026-02-23T13:46:18.6585612+09:00","level":"INFO","msg":"handler: started","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:46:18.6585612+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:46:18.6585612+09:00","level":"INFO","msg":"sender: started","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:46:19.1025767+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-23T13:46:34.279446+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:46:49.1896951+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:47:04.4053357+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:47:19.5840098+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:47:34.1804178+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T13:47:36.634316+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-23T13:47:36.634316+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-23T13:47:37.6438292+09:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading config.yaml","runtime_seconds":0.1081883,"progress":"1.0KB/1.0KB"}],"total_operations":1}}
+{"time":"2026-02-23T13:47:37.8074253+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-23T13:47:38.1405047+09:00","level":"INFO","msg":"stream: closing","id":"2n01tf7t"}
+{"time":"2026-02-23T13:47:38.1405047+09:00","level":"INFO","msg":"handler: closed","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:47:38.1405047+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:47:38.1405047+09:00","level":"INFO","msg":"sender: closed","stream_id":"2n01tf7t"}
+{"time":"2026-02-23T13:47:38.1405047+09:00","level":"INFO","msg":"stream: closed","id":"2n01tf7t"}

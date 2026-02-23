@@ -199,6 +199,13 @@ class SchedulingEnv:
         self._update_available_actions(self.BATCH_IDX)
 
         # ========================================
+        # Tardiness 피처 캐시 초기화
+        # ========================================
+        self._cached_adj_completion = None   # (B, N) 경합 반영 완료시간
+        self._cached_local_due = None        # (B, N) activity별 로컬 마감시간
+        self._cached_remaining_after = None  # (B, N) 뒤에 남은 critical path 길이
+
+        # ========================================
         # Step-wise reward 초기화
         # ========================================
         if self.reward_type == 'stepwise':
@@ -935,6 +942,13 @@ class SchedulingEnv:
             adj_completion = new_comp
 
         # ================================================================
+        # 캐싱: _get_state_daniel()에서 tardiness 피처로 재사용
+        # ================================================================
+        self._cached_adj_completion = adj_completion    # (B, N) 경합 반영 완료시간
+        self._cached_local_due = local_due              # (B, N) activity별 로컬 마감시간
+        self._cached_remaining_after = remaining_after  # (B, N) 뒤에 남은 critical path 길이
+
+        # ================================================================
         # Phase 7: Project completion → Total Tardiness
         # ================================================================
         proj_range = torch.arange(self.N_P, device=device)
@@ -1138,40 +1152,79 @@ class SchedulingEnv:
 
         f5 = ready.float()  # currently ready (simplified waiting indicator)
 
-        # f6: C(activity) LB — Estimated completion time lower bound (논문 피처 6)
-        # Scheduled: actual end_time (확정값)
-        # Unscheduled: release + max(pred LB) + duration (iterative DAG relaxation)
-        # preds / valid_pred_mask / safe_preds 는 위에서 이미 계산됨 (재사용)
-        completion_lb = torch.where(
-            self.activity_started,
-            self.activity_end_time,
-            act_release + self.activity_duration
-        )
-        completion_lb = torch.where(valid_act, completion_lb, torch.zeros_like(completion_lb))
-        max_preds_dim = preds.shape[2]
-        for _ in range(self.N_A_max):
-            pred_comp = torch.gather(
-                completion_lb, 1, safe_preds.reshape(B, -1)
-            ).reshape(B, N, max_preds_dim)
-            pred_comp = torch.where(valid_pred_mask, pred_comp, torch.zeros_like(pred_comp))
-            max_pred_comp = pred_comp.max(dim=2)[0]  # (B, N)
-            new_comp = torch.where(
+        # f6 ~ f6_extra: Tardiness-aware completion features
+        # 캐시가 있으면 (stepwise reward) 경합 반영 값 사용, 없으면 Phase 1-2 인라인 계산
+        if self._cached_adj_completion is not None:
+            # Stepwise reward에서 이미 계산된 경합 반영 값 재사용
+            best_comp = self._cached_adj_completion          # (B, N)
+            local_due = self._cached_local_due               # (B, N)
+            remaining_after = self._cached_remaining_after   # (B, N)
+        else:
+            # Phase 1: Forward DAG relaxation (기존 f6 로직)
+            # preds / valid_pred_mask / safe_preds 는 위에서 이미 계산됨 (재사용)
+            elig_mask_f = self.activity_eligible_teams  # (B, N, T)
+            elig_count_f = elig_mask_f.sum(dim=2).float().clamp(min=1)  # (B, N)
+            avg_pt_f = (self.activity_team_duration * elig_mask_f.float()).sum(dim=2) / elig_count_f  # (B, N)
+
+            completion_lb = torch.where(
                 self.activity_started,
                 self.activity_end_time,
-                torch.max(act_release, max_pred_comp) + self.activity_duration
+                act_release + avg_pt_f
             )
-            new_comp = torch.where(valid_act, new_comp, torch.zeros_like(new_comp))
-            if torch.equal(new_comp, completion_lb):
-                break
-            completion_lb = new_comp
-        f6 = completion_lb / max(1.0, max_time_val)
+            completion_lb = torch.where(valid_act, completion_lb, torch.zeros_like(completion_lb))
+            max_preds_dim = preds.shape[2]
+            for _ in range(self.N_A_max):
+                pred_comp = torch.gather(
+                    completion_lb, 1, safe_preds.reshape(B, -1)
+                ).reshape(B, N, max_preds_dim)
+                pred_comp = torch.where(valid_pred_mask, pred_comp, torch.zeros_like(pred_comp))
+                max_pred_comp = pred_comp.max(dim=2)[0]  # (B, N)
+                new_comp = torch.where(
+                    self.activity_started,
+                    self.activity_end_time,
+                    torch.max(act_release, max_pred_comp) + avg_pt_f
+                )
+                new_comp = torch.where(valid_act, new_comp, torch.zeros_like(new_comp))
+                if torch.equal(new_comp, completion_lb):
+                    break
+                completion_lb = new_comp
+            best_comp = completion_lb  # (B, N)
+
+            # Phase 2: Backward DAG → tail length → local due date
+            succs_f = self.activity_successors  # (B, N, max_succs)
+            valid_succ_f = succs_f >= 0
+            safe_succs_f = succs_f.clamp(min=0)
+
+            tail = torch.where(valid_act, avg_pt_f.clone(), torch.zeros(B, N, device=device))
+            max_succs_dim = succs_f.shape[2]
+            for _ in range(self.N_A_max):
+                succ_tail = torch.gather(
+                    tail, 1, safe_succs_f.reshape(B, -1)
+                ).reshape(B, N, max_succs_dim)
+                succ_tail = torch.where(valid_succ_f, succ_tail, torch.zeros_like(succ_tail))
+                max_succ_tail = succ_tail.max(dim=2)[0]  # (B, N)
+                new_tail = avg_pt_f + max_succ_tail
+                new_tail = torch.where(valid_act, new_tail, torch.zeros_like(new_tail))
+                if torch.equal(new_tail, tail):
+                    break
+                tail = new_tail
+
+            remaining_after = tail - avg_pt_f  # (B, N) activity 이후 남은 critical path 길이
+            act_due = torch.gather(self.project_due_date, 1, act_proj_safe)  # (B, N)
+            local_due = act_due - remaining_after  # (B, N)
+
+        f6 = best_comp / max(1.0, max_time_val)
+        # f12: local slack = local_due - best_comp (양수=여유, 음수=지각 예상)
+        f12 = (local_due - best_comp) / max(1.0, max_time_val)
+        # f13: remaining_after = backward critical path length after this activity
+        f13 = remaining_after / max(1.0, max_time_val)
 
         # Project remaining act/work ratios (mapped per activity)
         f7 = torch.gather(proj_rem_count, 1, act_proj_safe) / torch.gather(proj_tot_count, 1, act_proj_safe)
         f8 = torch.gather(proj_rem_work, 1, act_proj_safe) / torch.gather(proj_tot_work, 1, act_proj_safe)
         f9 = self.activity_eligible_teams.sum(dim=2).float() / T
 
-        fea_act = torch.stack([f0, f1, f2, f_minpt, f_span, f3, f4, f5, f6, f7, f8, f9], dim=2)
+        fea_act = torch.stack([f0, f1, f2, f_minpt, f_span, f3, f4, f5, f6, f7, f8, f9, f12, f13], dim=2)
         fea_act[~valid_act] = 0
         
         # Normalization (FJSP 방식: activity 축 기준 mean/std)
