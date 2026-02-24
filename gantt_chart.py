@@ -352,21 +352,25 @@ def create_precedence_graph(
     activity_mutex: Dict[int, List[int]],
     activity_to_project: Dict[int, int],
     instance_name: str,
+    activity_eligible_teams: Dict[int, List[int]] = None,
+    activity_processing_times: Dict[int, Dict[int, float]] = None,
     save_dir: Path = None,
     show: bool = False
 ) -> List[Path]:
     """
     Activity 선후관계 그래프 생성 (인스턴스 구조 시각화)
     각 프로젝트별로 독립적인 그래프 파일 생성
-    
+
     Args:
         activity_predecessors: activity_id -> [predecessor_ids] 매핑
         activity_mutex: activity_id -> [mutex_activity_ids] 매핑
         activity_to_project: activity_id -> project_id 매핑
         instance_name: 인스턴스 이름
+        activity_eligible_teams: activity_id -> [eligible_team_ids] 매핑 (옵션)
+        activity_processing_times: activity_id -> {team_id: processing_time} 매핑 (옵션)
         save_dir: 저장 디렉토리
         show: 생성 후 브라우저에서 표시할지 여부
-    
+
     Returns:
         저장된 파일 경로 리스트
     """
@@ -385,6 +389,8 @@ def create_precedence_graph(
             activity_mutex=activity_mutex,
             activity_to_project=activity_to_project,
             instance_name=instance_name,
+            activity_eligible_teams=activity_eligible_teams,
+            activity_processing_times=activity_processing_times,
             save_dir=save_dir,
             show=show
         )
@@ -400,21 +406,25 @@ def _create_single_project_precedence_graph(
     activity_mutex: Dict[int, List[int]],
     activity_to_project: Dict[int, int],
     instance_name: str,
-    save_dir: Path,
+    activity_eligible_teams: Dict[int, List[int]] = None,
+    activity_processing_times: Dict[int, Dict[int, float]] = None,
+    save_dir: Path = None,
     show: bool = False
 ) -> Path:
     """
     단일 프로젝트의 선후관계 그래프 생성
-    
+
     Args:
         project_id: 프로젝트 ID
         activity_predecessors: activity_id -> [predecessor_ids] 매핑
         activity_mutex: activity_id -> [mutex_activity_ids] 매핑
         activity_to_project: activity_id -> project_id 매핑
         instance_name: 인스턴스 이름
+        activity_eligible_teams: activity_id -> [eligible_team_ids] 매핑 (옵션)
+        activity_processing_times: activity_id -> {team_id: processing_time} 매핑 (옵션)
         save_dir: 저장 디렉토리
         show: 생성 후 브라우저에서 표시할지 여부
-    
+
     Returns:
         저장된 파일 경로
     """
@@ -559,13 +569,35 @@ def _create_single_project_precedence_graph(
     node_x = []
     node_y = []
     node_text = []
-    
+    node_hover = []
+
     for act_id in project_activities:
         x, y = pos[act_id]
         node_x.append(x)
         node_y.append(y)
         node_text.append(f'A{act_id}')
-    
+
+        # Hover 정보 구성
+        hover_lines = [f'<b>Activity {act_id}</b>', f'Project: {project_id}']
+
+        if activity_eligible_teams and act_id in activity_eligible_teams:
+            teams = activity_eligible_teams[act_id]
+            hover_lines.append(f'Eligible Teams: {teams}')
+
+            # 팀별 처리시간 표시
+            if activity_processing_times and act_id in activity_processing_times:
+                pt = activity_processing_times[act_id]
+                for t in teams:
+                    if t in pt:
+                        hover_lines.append(f'  T{t}: {pt[t]:.0f}')
+        elif activity_processing_times and act_id in activity_processing_times:
+            pt = activity_processing_times[act_id]
+            hover_lines.append('Processing Times:')
+            for t, dur in sorted(pt.items()):
+                hover_lines.append(f'  T{t}: {dur:.0f}')
+
+        node_hover.append('<br>'.join(hover_lines) + '<extra></extra>')
+
     fig.add_trace(go.Scatter(
         x=node_x,
         y=node_y,
@@ -579,8 +611,42 @@ def _create_single_project_precedence_graph(
         textposition='middle center',
         textfont=dict(size=12, color='white', family='Arial Black'),
         name=f'Project {project_id}',
-        hovertemplate='<b>Activity %{text}</b><br>Project: ' + str(project_id) + '<extra></extra>'
+        hovertemplate=node_hover
     ))
+
+    # Eligible team & processing time 테이블을 그래프 하단에 annotation으로 추가
+    if activity_eligible_teams or activity_processing_times:
+        table_lines = []
+        for act_id in sorted(project_activities):
+            parts = [f'A{act_id}:']
+            if activity_eligible_teams and act_id in activity_eligible_teams:
+                teams = activity_eligible_teams[act_id]
+                if activity_processing_times and act_id in activity_processing_times:
+                    pt = activity_processing_times[act_id]
+                    team_strs = [f'T{t}({pt[t]:.0f})' if t in pt else f'T{t}' for t in teams]
+                else:
+                    team_strs = [f'T{t}' for t in teams]
+                parts.append(', '.join(team_strs))
+            elif activity_processing_times and act_id in activity_processing_times:
+                pt = activity_processing_times[act_id]
+                team_strs = [f'T{t}({dur:.0f})' for t, dur in sorted(pt.items())]
+                parts.append(', '.join(team_strs))
+            table_lines.append(' '.join(parts))
+
+        table_text = '<br>'.join(table_lines)
+        fig.add_annotation(
+            text=f'<b>Eligible Teams (Processing Time)</b><br>{table_text}',
+            xref='paper', yref='paper',
+            x=0, y=-0.05,
+            xanchor='left', yanchor='top',
+            showarrow=False,
+            font=dict(size=11, family='Courier New'),
+            align='left',
+            bgcolor='rgba(255,255,255,0.9)',
+            bordercolor='gray',
+            borderwidth=1,
+            borderpad=6
+        )
     
     # 범례 항목 추가 (edge 타입 설명)
     fig.add_trace(go.Scatter(
@@ -600,11 +666,14 @@ def _create_single_project_precedence_graph(
     ))
     
     # 레이아웃 설정
+    has_table = activity_eligible_teams or activity_processing_times
+    bottom_margin = 30 + len(project_activities) * 18 if has_table else 30
     fig.update_layout(
         title=f'{instance_name} - Project {project_id} - Activity Precedence & Mutex',
         showlegend=True,
         hovermode='closest',
-        height=600,
+        height=600 + (bottom_margin if has_table else 0),
+        margin=dict(b=bottom_margin),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         plot_bgcolor='white',

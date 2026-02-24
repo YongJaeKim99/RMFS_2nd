@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["RL"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
+    test_algorithms = ["RL", "GA", "CP"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -609,14 +609,21 @@ if __name__ == "__main__":
                         try:
                             activity_predecessors = {}
                             activity_mutex = {}
+                            act_eligible = {}
+                            act_proc_times = {}
                             for act in ga.activities:
                                 activity_predecessors[act.id] = act.predecessors
                                 activity_mutex[act.id] = act.mutually_exclusive
+                                act_eligible[act.id] = act.eligible_teams
+                                if act.duration_by_team:
+                                    act_proc_times[act.id] = act.duration_by_team
                             create_precedence_graph(
                                 activity_predecessors=activity_predecessors,
                                 activity_mutex=activity_mutex,
                                 activity_to_project=ga.activity_to_project,
                                 instance_name=f"{pickle_name}_instance_{i}",
+                                activity_eligible_teams=act_eligible,
+                                activity_processing_times=act_proc_times if act_proc_times else None,
                                 save_dir=gantt_dir,
                                 show=True
                             )
@@ -703,11 +710,22 @@ if __name__ == "__main__":
                                         print(f"     ⚠️ 간트차트 생성 실패: {e}")
                                 if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
                                     try:
+                                        inst_proc_times = {}
+                                        has_team_dur = hasattr(inst, 'activity_team_durations')
+                                        for a_id in range(inst.num_activities):
+                                            inst_proc_times[a_id] = {}
+                                            for k in inst.activity_to_teams.get(a_id, []):
+                                                if has_team_dur:
+                                                    inst_proc_times[a_id][k] = inst.activity_team_durations[a_id][k]
+                                                else:
+                                                    inst_proc_times[a_id][k] = inst.durations[a_id]
                                         create_precedence_graph(
                                             activity_predecessors=inst.precedences,
                                             activity_mutex=inst.nooverlaps,
                                             activity_to_project=inst.activity_to_project,
                                             instance_name=f"{pickle_name}_instance_{i}",
+                                            activity_eligible_teams=inst.activity_to_teams,
+                                            activity_processing_times=inst_proc_times,
                                             save_dir=gantt_dir,
                                             show=True
                                         )
@@ -805,11 +823,22 @@ if __name__ == "__main__":
                                     print(f"     ⚠️ 간트차트 생성 실패: {e}")
                             if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
                                 try:
+                                    inst_proc_times_cp = {}
+                                    has_team_dur_cp = hasattr(inst, 'activity_team_durations')
+                                    for a_id in range(inst.num_activities):
+                                        inst_proc_times_cp[a_id] = {}
+                                        for k in inst.activity_to_teams.get(a_id, []):
+                                            if has_team_dur_cp:
+                                                inst_proc_times_cp[a_id][k] = inst.activity_team_durations[a_id][k]
+                                            else:
+                                                inst_proc_times_cp[a_id][k] = inst.durations[a_id]
                                     create_precedence_graph(
                                         activity_predecessors=inst.precedences,
                                         activity_mutex=inst.nooverlaps,
                                         activity_to_project=inst.activity_to_project,
                                         instance_name=f"{pickle_name}_instance_{i}",
+                                        activity_eligible_teams=inst.activity_to_teams,
+                                        activity_processing_times=inst_proc_times_cp,
                                         save_dir=gantt_dir,
                                         show=True
                                     )
@@ -986,16 +1015,25 @@ if __name__ == "__main__":
                             if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
                                 activity_predecessors = {}
                                 activity_mutex = {}
+                                rl_eligible = {}
+                                rl_proc_times = {}
                                 for act_id in range(num_act):
                                     preds = test_env.activity_predecessors[i, act_id].cpu().numpy().tolist()
                                     activity_predecessors[act_id] = [p for p in preds if p >= 0]
                                     mutex = test_env.activity_mutex[i, act_id].cpu().numpy().tolist()
                                     activity_mutex[act_id] = [m for m in mutex if m >= 0]
+                                    elig_mask = test_env.activity_eligible_teams[i, act_id].cpu()
+                                    teams = [t for t in range(test_env.N_T) if elig_mask[t].item()]
+                                    rl_eligible[act_id] = teams
+                                    durations = test_env.activity_team_duration[i, act_id].cpu()
+                                    rl_proc_times[act_id] = {t: durations[t].item() for t in teams}
                                 create_precedence_graph(
                                     activity_predecessors=activity_predecessors,
                                     activity_mutex=activity_mutex,
                                     activity_to_project=act_to_proj,
                                     instance_name=f"{pickle_name}_instance_{i}",
+                                    activity_eligible_teams=rl_eligible,
+                                    activity_processing_times=rl_proc_times,
                                     save_dir=gantt_dir,
                                     show=True
                                 )
