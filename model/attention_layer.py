@@ -24,27 +24,31 @@ class SingleOpAttnBlock(nn.Module):
         # inner attention용 파라미터: e_{i,k} = LeakyReLU(a_inner^T [Wh_i || Wh_k])
         self.a_inner = nn.Parameter(torch.empty(size=(2 * output_dim, 1)))
         nn.init.xavier_uniform_(self.a_inner.data, gain=1.414)
+        # mutex inner attention용 파라미터 (항상 생성 — 체크포인트 호환성)
+        self.a_inner_mutex = nn.Parameter(torch.empty(size=(2 * output_dim, 1)))
+        nn.init.xavier_uniform_(self.a_inner_mutex.data, gain=1.414)
 
         self.leaky_relu = nn.LeakyReLU(self.alpha)
 
         self.dropout = nn.Dropout(p=dropout_prob)
 
-    def forward(self, h, op_mask, pred_idx, succ_idx):
+    def forward(self, h, op_mask, pred_idx, succ_idx, mutex_idx=None):
         """
-        DAG-based 2-level GAT attention.
+        DAG-based 2-level GAT attention with optional mutex awareness.
 
         :param h: operation feature vectors with shape [sz_b, N, input_dim]
-        :param op_mask: used for masking zero pred/succ aggregations
-                        with shape [sz_b, N, 3]
+        :param op_mask: used for masking zero pred/succ/mutex aggregations
+                        with shape [sz_b, N, 3] (no mutex) or [sz_b, N, 4] (with mutex)
         :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
         :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
+        :param mutex_idx: mutex partner indices [sz_b, N, max_mutex], -1 padded (None if disabled)
         :return: output feature vectors with shape [sz_b, N, output_dim]
         """
         Wh = torch.matmul(h, self.W)  # (B, N, D)
         B, N, D = Wh.shape
 
-        def inner_attend(neighbor_idx):
-            """선행자/후행자 집합에 대한 inner attention → (B, N, D)"""
+        def inner_attend(neighbor_idx, a_inner_param):
+            """이웃 집합에 대한 inner attention → (B, N, D)"""
             max_k = neighbor_idx.shape[2]
             valid = neighbor_idx >= 0                          # (B, N, max_k)
             safe  = neighbor_idx.clamp(min=0)                  # (B, N, max_k)
@@ -56,31 +60,39 @@ class SingleOpAttnBlock(nn.Module):
             ).reshape(B, N, max_k, D)
 
             # inner attention: e_{i,k} = LeakyReLU(a_inner^T [Wh_i || Wh_k])
-            q = torch.matmul(Wh,     self.a_inner[:D, :])   # (B, N, 1)
-            k = torch.matmul(nbr_emb, self.a_inner[D:, :])  # (B, N, max_k, 1)
-            e = self.leaky_relu(q.unsqueeze(2) + k)          # (B, N, max_k, 1)
+            q = torch.matmul(Wh,      a_inner_param[:D, :])   # (B, N, 1)
+            k = torch.matmul(nbr_emb, a_inner_param[D:, :])   # (B, N, max_k, 1)
+            e = self.leaky_relu(q.unsqueeze(2) + k)            # (B, N, max_k, 1)
             e = e.masked_fill(~valid.unsqueeze(-1), -9e15)
 
-            alpha = F.softmax(e, dim=2)                       # (B, N, max_k, 1)
-            agg   = (alpha * nbr_emb).sum(dim=2)             # (B, N, D)
+            alpha = F.softmax(e, dim=2)                        # (B, N, max_k, 1)
+            agg   = (alpha * nbr_emb).sum(dim=2)              # (B, N, D)
 
             # 유효 이웃이 없으면 zero vector (op_mask로 outer에서 마스킹)
             agg = agg * valid.any(dim=2, keepdim=True).float()
             return agg
 
-        pred_agg = inner_attend(pred_idx)   # (B, N, D)
-        succ_agg = inner_attend(succ_idx)   # (B, N, D)
+        pred_agg = inner_attend(pred_idx, self.a_inner)   # (B, N, D)
+        succ_agg = inner_attend(succ_idx, self.a_inner)   # (B, N, D)
 
-        # outer attention: {pred_agg, Wh_self, succ_agg} 3-slot
-        Wh_concat = torch.stack([pred_agg, Wh, succ_agg], dim=-2)    # (B, N, 3, D)
-
+        # outer attention query (self) — 공통
         Wh1      = torch.matmul(Wh,       self.a[:D, :])              # (B, N, 1)
         Wh2_pred = torch.matmul(pred_agg, self.a[D:, :])              # (B, N, 1)
         Wh2_self = torch.matmul(Wh,       self.a[D:, :])              # (B, N, 1)
         Wh2_succ = torch.matmul(succ_agg, self.a[D:, :])              # (B, N, 1)
-        Wh2_concat = torch.stack([Wh2_pred, Wh2_self, Wh2_succ], dim=-1)  # (B, N, 1, 3)
 
-        e_outer  = self.leaky_relu(Wh1.unsqueeze(-1) + Wh2_concat)   # (B, N, 1, 3)
+        if mutex_idx is not None:
+            # 4-slot: {pred_agg, Wh_self, succ_agg, mutex_agg}
+            mutex_agg  = inner_attend(mutex_idx, self.a_inner_mutex)   # (B, N, D)
+            Wh2_mutex  = torch.matmul(mutex_agg, self.a[D:, :])       # (B, N, 1)
+            Wh_concat  = torch.stack([pred_agg, Wh, succ_agg, mutex_agg], dim=-2)  # (B, N, 4, D)
+            Wh2_concat = torch.stack([Wh2_pred, Wh2_self, Wh2_succ, Wh2_mutex], dim=-1)  # (B, N, 1, 4)
+        else:
+            # 3-slot: {pred_agg, Wh_self, succ_agg} (기존 동작)
+            Wh_concat  = torch.stack([pred_agg, Wh, succ_agg], dim=-2)              # (B, N, 3, D)
+            Wh2_concat = torch.stack([Wh2_pred, Wh2_self, Wh2_succ], dim=-1)        # (B, N, 1, 3)
+
+        e_outer  = self.leaky_relu(Wh1.unsqueeze(-1) + Wh2_concat)   # (B, N, 1, S) S=3 or 4
         zero_vec = -9e15 * torch.ones_like(e_outer)
         attention = torch.where(op_mask.unsqueeze(-2) > 0, zero_vec, e_outer)
         attention = F.softmax(attention, dim=-1)
@@ -112,13 +124,14 @@ class MultiHeadOpAttnBlock(nn.Module):
         for i, attention in enumerate(self.attentions):
             self.add_module('attention_{}'.format(i), attention)
 
-    def forward(self, h, op_mask, pred_idx, succ_idx):
+    def forward(self, h, op_mask, pred_idx, succ_idx, mutex_idx=None):
         """
         :param h: operation feature vectors with shape [sz_b, N, input_dim]
-        :param op_mask: used for masking nonexistent predecessors/successor
-                        (with shape [sz_b, N, 3])
+        :param op_mask: used for masking nonexistent predecessors/successor/mutex
+                        (with shape [sz_b, N, 3] or [sz_b, N, 4])
         :param pred_idx: predecessor indices [sz_b, N, max_preds], -1 padded
         :param succ_idx: successor indices   [sz_b, N, max_succs], -1 padded
+        :param mutex_idx: mutex partner indices [sz_b, N, max_mutex], -1 padded (None if disabled)
         :return: output feature vectors with shape
                 [sz_b, N, num_heads * output_dim] (if concat == true)
                 or [sz_b, N, output_dim]
@@ -126,7 +139,7 @@ class MultiHeadOpAttnBlock(nn.Module):
         h = self.dropout(h)
 
         # shape: [ [sz_b, N, output_dim], ... [sz_b, N, output_dim]]
-        h_heads = [att(h, op_mask, pred_idx, succ_idx) for att in self.attentions]
+        h_heads = [att(h, op_mask, pred_idx, succ_idx, mutex_idx) for att in self.attentions]
 
         if self.concat:
             h = torch.cat(h_heads, dim=-1)

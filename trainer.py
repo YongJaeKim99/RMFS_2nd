@@ -546,12 +546,13 @@ class Scheduling_Trainer:
                 fea_pairs = s.fea_pairs_tensor.to(self.device)
                 pred_idx  = s.pred_idx_tensor.to(self.device)
                 succ_idx  = s.succ_idx_tensor.to(self.device)
+                mutex_idx = s.mutex_idx_tensor.to(self.device) if s.mutex_idx_tensor is not None else None
 
                 # Forward pass → (pi, v)
                 pi, v = self.model(
                     fea_act, act_mask, candidate, fea_team,
                     team_mask, comp_idx, dyn_pmask, fea_pairs,
-                    pred_idx, succ_idx
+                    pred_idx, succ_idx, mutex_idx
                 )
 
                 # Sample action
@@ -626,6 +627,7 @@ class Scheduling_Trainer:
                 end   = min(start + self.ppo_minibatch_size, full_batch_size)
 
                 # Forward through CURRENT policy
+                mutex_batch = t_data[10][start:end] if t_data[10] is not None else None
                 pi_new, v_new = self.model(
                     t_data[0][start:end],   # fea_act
                     t_data[1][start:end],   # act_mask
@@ -637,10 +639,11 @@ class Scheduling_Trainer:
                     t_data[7][start:end],   # fea_pairs
                     t_data[8][start:end],   # pred_idx
                     t_data[9][start:end],   # succ_idx
+                    mutex_batch,            # mutex_idx (None if disabled)
                 )
 
-                actions_batch   = t_data[10][start:end]  # action (shifted by 2)
-                old_logprobs    = t_data[14][start:end]  # stored log_probs (shifted by 2)
+                actions_batch   = t_data[11][start:end]  # action
+                old_logprobs    = t_data[15][start:end]  # stored log_probs
                 adv_batch       = t_advantage[start:end]
                 v_target_batch  = v_target[start:end]
 
@@ -744,12 +747,13 @@ class Scheduling_Trainer:
             fea_pairs = s.fea_pairs_tensor.to(self.device)
             pred_idx = s.pred_idx_tensor.to(self.device)
             succ_idx = s.succ_idx_tensor.to(self.device)
+            mutex_idx = s.mutex_idx_tensor.to(self.device) if s.mutex_idx_tensor is not None else None
 
             # DANIEL forward: (pi, v)
             pi, v = self.model(
                 fea_act, act_mask, candidate, fea_team,
                 team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                pred_idx, succ_idx
+                pred_idx, succ_idx, mutex_idx
             )
 
             # Action 샘플링
@@ -1094,13 +1098,15 @@ class Scheduling_Trainer:
         try:
             checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
             
-            # 모델 가중치 로드
-            self.model.load_state_dict(checkpoint['model_state_dict'])
+            # 모델 가중치 로드 (strict=False: a_inner_mutex 등 새 파라미터 호환)
+            missing, unexpected = self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            if missing:
+                print(f"⚠️ 새 파라미터 (랜덤 초기화): {missing}")
             print(f"✅ 모델 가중치 로드 완료")
 
             # PPO: model_old 복원
             if self.algorithm_type == 'ppo' and 'model_old_state_dict' in checkpoint and checkpoint['model_old_state_dict'] is not None:
-                self.model_old.load_state_dict(checkpoint['model_old_state_dict'])
+                self.model_old.load_state_dict(checkpoint['model_old_state_dict'], strict=False)
                 print(f"✅ PPO policy_old 가중치 로드 완료")
 
             # Optimizer 상태 로드 (있는 경우)
@@ -1261,11 +1267,12 @@ class Scheduling_Trainer:
                 fea_pairs = s.fea_pairs_tensor.to(self.device)
                 pred_idx = s.pred_idx_tensor.to(self.device)
                 succ_idx = s.succ_idx_tensor.to(self.device)
+                mutex_idx = s.mutex_idx_tensor.to(self.device) if s.mutex_idx_tensor is not None else None
 
                 pi, v = self.model(
                     fea_act, act_mask, candidate, fea_team,
                     team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                    pred_idx, succ_idx
+                    pred_idx, succ_idx, mutex_idx
                 )
 
                 # Greedy: argmax

@@ -16,7 +16,7 @@
 | **Due date** | 프로젝트별 납기 |
 
 ### 정책 네트워크
-**DANIEL** (Dual Attention Network for Integrated Scheduling) — FJSP용으로 설계된 모델을 RCMPSP에 맞게 이식하여 사용합니다.
+**DANIEL** (Dual Attention Network based reInforcEment Learning) — FJSP용으로 설계된 모델을 RCMPSP에 맞게 이식하여 사용합니다.
 
 ### 비교 알고리즘
 - **GA** (Genetic Algorithm): Random Key 방식의 유전 알고리즘

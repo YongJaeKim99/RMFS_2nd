@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'reinforce'   # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
     # 'reinforce': REINFORCE + POMO baseline
     # 'ppo':       PPO-Clip + GAE
 
@@ -20,12 +20,13 @@ if __name__ == "__main__":
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
     
     # Reward 방식 선택
-    REWARD_TYPE = 'sparse'  # 'sparse': episode 끝에만 reward (기본)
+    REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
                             # 'stepwise': 매 step마다 dense reward
     # Wait / Dominance 옵션 (DANIEL action space)
     ALLOW_WAIT_RELEASE = True   # True: release time 미래 activity도 대기 후 스케줄 허용
     ALLOW_WAIT_MUTEX = True     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
     DOMINANCE_RULE = True       # True: 대기 pair의 dominance 필터링
+    USE_MUTEX_ATTENTION = True  # True: Activity Attention Block에 mutex 관계를 4번째 슬롯으로 반영
 
     # Tardiness 추정 방식 (stepwise reward + feature에 사용)
     TARDINESS_EST_TYPE = 'simple'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS                = 1000       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 64       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        BATCH_SIZE            = 128       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
@@ -165,6 +166,7 @@ if __name__ == "__main__":
          'allow_wait_release': ALLOW_WAIT_RELEASE,
          'allow_wait_mutex': ALLOW_WAIT_MUTEX,
          'dominance_rule': DOMINANCE_RULE,
+         'use_mutex_attention': USE_MUTEX_ATTENTION,
          'reward_type': REWARD_TYPE,
          'tardiness_est_type': TARDINESS_EST_TYPE,
     }

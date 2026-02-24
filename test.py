@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 1) 체크포인트 설정
     # -----------------------------
-    CHECKPOINT_FOLDER = "20260224_085429_tardiness_DANIEL_PPO"
+    CHECKPOINT_FOLDER = "20260224_105414_tardiness_DANIEL_REINFORCE"
     CHECKPOINT_FILE = "best_model.pt"
     TEST_ALL_CHECKPOINTS = False
 
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["RL","GA"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
+    test_algorithms = ["RL"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -57,17 +57,17 @@ if __name__ == "__main__":
     GA_MUTEX_MODE = "wait"
     GA_VERBOSE = False
     GA_DOMINANCE_RULE = True
-    GA_REPEATS = 3
+    GA_REPEATS = 1
 
     # MIP (Gurobi) 설정
-    MIP_TIME_LIMIT = 300       # 인스턴스당 시간 제한 (초)
+    MIP_TIME_LIMIT = 30       # 인스턴스당 시간 제한 (초)
 
     # CP (CP-SAT) 설정
     CP_TIME_LIMIT = 30         # 인스턴스당 시간 제한 (초)
 
     # 간트차트 설정
-    SHOW_GANTT_CHART = False
-    SHOW_PRECEDENCE_GRAPH = False
+    SHOW_GANTT_CHART = True
+    SHOW_PRECEDENCE_GRAPH = True
 
     # =================================================================
     # 🎯 목적함수 선택
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     # 인스턴스 범위 설정
     # -----------------------------
     INSTANCE_START = 0  # 시작 인스턴스 번호 (None이면 0부터)
-    INSTANCE_END = 10    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
+    INSTANCE_END = 1    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
 
     # -----------------------------
     # 기타 설정
@@ -94,6 +94,7 @@ if __name__ == "__main__":
     ALLOW_WAIT_RELEASE = True
     ALLOW_WAIT_MUTEX = True
     DOMINANCE_RULE = True
+    USE_MUTEX_ATTENTION = True
 
     DEBUG_ENV = False
     DEBUG_MODEL = False
@@ -396,6 +397,7 @@ if __name__ == "__main__":
             'allow_wait_release': ALLOW_WAIT_RELEASE,
             'allow_wait_mutex': ALLOW_WAIT_MUTEX,
             'dominance_rule': DOMINANCE_RULE,
+            'use_mutex_attention': USE_MUTEX_ATTENTION,
         }
         for k, v in first_problem['env_params'].items():
             if k not in ('batch_size', 'pomo_size', 'state_mode', 'debug_env'):
@@ -495,6 +497,7 @@ if __name__ == "__main__":
             'allow_wait_release': ALLOW_WAIT_RELEASE,
             'allow_wait_mutex': ALLOW_WAIT_MUTEX,
             'dominance_rule': DOMINANCE_RULE,
+            'use_mutex_attention': USE_MUTEX_ATTENTION,
         }
         saved_env = problem['env_params']
         for k, v in saved_env.items():
@@ -912,11 +915,12 @@ if __name__ == "__main__":
                         fea_pairs = s.fea_pairs_tensor.to(device)
                         pred_idx = s.pred_idx_tensor.to(device)
                         succ_idx = s.succ_idx_tensor.to(device)
+                        mutex_idx = s.mutex_idx_tensor.to(device) if s.mutex_idx_tensor is not None else None
 
                         pi, v = trainer.model(
                             fea_act, act_mask, candidate, fea_team,
                             team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
-                            pred_idx, succ_idx
+                            pred_idx, succ_idx, mutex_idx
                         )
                         action_flat = torch.argmax(pi, dim=1)
                         N_T = test_env.N_T

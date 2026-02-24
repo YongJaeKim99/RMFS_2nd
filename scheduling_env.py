@@ -27,6 +27,7 @@ class EnvState:
     fea_pairs_tensor: torch.Tensor = None      # (B, N, T, 8) pair features
     pred_idx_tensor: torch.Tensor = None       # (B, N, max_preds) predecessor indices (-1 padded)
     succ_idx_tensor: torch.Tensor = None       # (B, N, max_succs) successor indices (-1 padded)
+    mutex_idx_tensor: torch.Tensor = None      # (B, N, max_mutex) mutex partner indices (-1 padded), None if disabled
 
 
 class SchedulingEnv:
@@ -87,6 +88,8 @@ class SchedulingEnv:
         self.allow_wait_mutex = env_params.get('allow_wait_mutex', False)
         # Dominance rule: 대기 중 idle time에 다른 activity를 할 수 있으면 해당 대기 pair 제외
         self.dominance_rule = env_params.get('dominance_rule', False)
+        # Mutex Attention: Activity Attention Block에 mutex 관계를 4번째 슬롯으로 반영
+        self.use_mutex_attention = env_params.get('use_mutex_attention', False)
 
         # Step 진행 로그: 매 step마다 완료 activity 수 출력
         self.step_log = env_params.get('step_log', False)
@@ -1371,23 +1374,31 @@ class SchedulingEnv:
         fea_act[~valid_act] = 0
         
         # ========================================
-        # 4. act_mask (B, N, 3) — attention neighbor mask
+        # 4. act_mask — attention neighbor mask
+        #    3-slot (B, N, 3) or 4-slot (B, N, 4) depending on use_mutex_attention
         # ========================================
         # slot 0: mask=1 → skip pred_agg  (DAG source: no predecessors)
         # slot 1: self (항상 attend)
         # slot 2: mask=1 → skip succ_agg  (DAG sink: no successors)
+        # slot 3: mask=1 → skip mutex_agg (no mutex partners) — only if use_mutex_attention
         # mask=1 means DON'T attend (FJSP convention)
 
         # 실제 DAG 구조 기반: 선행자/후행자 존재 여부
         has_pred = (self.activity_predecessors >= 0).any(dim=2)  # (B, N)
         has_succ = (self.activity_successors >= 0).any(dim=2)    # (B, N)
 
-        act_mask = torch.zeros(B, N, 3, device=device)
-        # DAG source (선행자 없음): pred_agg는 0-벡터이므로 outer attention에서 제외
-        act_mask[:, :, 0] = (~has_pred & valid_act).float()
-        # DAG sink (후행자 없음): succ_agg는 0-벡터이므로 outer attention에서 제외
-        act_mask[:, :, 2] = (~has_succ & valid_act).float()
-        act_mask[~valid_act] = 1.0  # 패딩 activity는 전부 mask
+        if self.use_mutex_attention:
+            has_mutex = (self.activity_mutex >= 0).any(dim=2)    # (B, N)
+            act_mask = torch.zeros(B, N, 4, device=device)
+            act_mask[:, :, 0] = (~has_pred & valid_act).float()
+            act_mask[:, :, 2] = (~has_succ & valid_act).float()
+            act_mask[:, :, 3] = (~has_mutex & valid_act).float()
+            act_mask[~valid_act] = 1.0
+        else:
+            act_mask = torch.zeros(B, N, 3, device=device)
+            act_mask[:, :, 0] = (~has_pred & valid_act).float()
+            act_mask[:, :, 2] = (~has_succ & valid_act).float()
+            act_mask[~valid_act] = 1.0
         
         # ========================================
         # 5. dynamic_pair_mask (B, N, T) — True=masked
@@ -1557,5 +1568,6 @@ class SchedulingEnv:
             fea_pairs_tensor=fea_pairs,
             pred_idx_tensor=self.activity_predecessors,  # (B, N, max_preds)
             succ_idx_tensor=self.activity_successors,    # (B, N, max_succs)
+            mutex_idx_tensor=self.activity_mutex if self.use_mutex_attention else None,
         )
         return state

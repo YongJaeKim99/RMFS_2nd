@@ -44,8 +44,8 @@ class PPOMemory:
         self.gae_lambda = gae_lambda
 
         # State tensors (one per step, shape [B, ...])
-        self.fea_act_seq = []           # [T_steps, tensor[B, N, 10]]
-        self.act_mask_seq = []          # [T_steps, tensor[B, N, 3]]
+        self.fea_act_seq = []           # [T_steps, tensor[B, N, 14]]
+        self.act_mask_seq = []          # [T_steps, tensor[B, N, 3 or 4]]
         self.fea_team_seq = []          # [T_steps, tensor[B, T_teams, 8]]
         self.team_mask_seq = []         # [T_steps, tensor[B, T_teams, T_teams]]
         self.dynamic_pair_mask_seq = [] # [T_steps, tensor[B, N, T_teams]]
@@ -54,6 +54,7 @@ class PPOMemory:
         self.fea_pairs_seq = []         # [T_steps, tensor[B, N, T_teams, 8]]
         self.pred_idx_seq = []          # [T_steps, tensor[B, N, max_preds]]
         self.succ_idx_seq = []          # [T_steps, tensor[B, N, max_succs]]
+        self.mutex_idx_seq = []         # [T_steps, tensor[B, N, max_mutex] or None]
 
         # Transition data (one per step)
         self.action_seq = []   # [T, tensor[B*P]]
@@ -81,6 +82,7 @@ class PPOMemory:
         self.fea_pairs_seq.append(state.fea_pairs_tensor)
         self.pred_idx_seq.append(state.pred_idx_tensor)
         self.succ_idx_seq.append(state.succ_idx_tensor)
+        self.mutex_idx_seq.append(state.mutex_idx_tensor)  # None if disabled
 
     def push_transition(self, action, log_prob, val, reward, done):
         """
@@ -107,8 +109,8 @@ class PPOMemory:
         Stack and flatten trajectory to [B*T_steps, ...] format.
 
         Layout of returned tuple (index → content):
-          0  fea_act      [B*T_steps, N, 10]
-          1  act_mask     [B*T_steps, N, 3]
+          0  fea_act      [B*T_steps, N, 14]
+          1  act_mask     [B*T_steps, N, 3 or 4]
           2  fea_team     [B*T_steps, T_teams, 8]
           3  team_mask    [B*T_steps, T_teams, T_teams]
           4  dyn_pair_msk [B*T_steps, N, T_teams]
@@ -117,11 +119,12 @@ class PPOMemory:
           7  fea_pairs    [B*T_steps, N, T_teams, 8]
           8  pred_idx     [B*T_steps, N, max_preds]
           9  succ_idx     [B*T_steps, N, max_succs]
-         10  action       [B*T_steps]
-         11  reward       [B*T_steps]
-         12  val          [B*T_steps]
-         13  done         [B*T_steps]
-         14  log_probs    [B*T_steps]
+         10  mutex_idx    [B*T_steps, N, max_mutex] or None
+         11  action       [B*T_steps]
+         12  reward       [B*T_steps]
+         13  val          [B*T_steps]
+         14  done         [B*T_steps]
+         15  log_probs    [B*T_steps]
         """
         def _stack_flat(seq):
             # [T, B*P, ...] → [B*P, T, ...] → [B*P*T, ...]
@@ -137,6 +140,13 @@ class PPOMemory:
         t_fea_pairs    = _stack_flat(self.fea_pairs_seq)
         t_pred_idx     = _stack_flat(self.pred_idx_seq)
         t_succ_idx     = _stack_flat(self.succ_idx_seq)
+
+        # mutex_idx: None if disabled, tensor if enabled
+        if self.mutex_idx_seq[0] is not None:
+            t_mutex_idx = _stack_flat(self.mutex_idx_seq)
+        else:
+            t_mutex_idx = None
+
         t_action       = _stack_flat(self.action_seq)
         t_reward       = _stack_flat(self.reward_seq)
 
@@ -149,7 +159,7 @@ class PPOMemory:
 
         return (t_fea_act, t_act_mask, t_fea_team, t_team_mask,
                 t_dyn_pmask, t_comp_idx, t_candidate, t_fea_pairs,
-                t_pred_idx, t_succ_idx,
+                t_pred_idx, t_succ_idx, t_mutex_idx,
                 t_action, t_reward, t_val, t_done, t_logprobs)
 
     # ------------------------------------------------------------------
@@ -213,6 +223,7 @@ class PPOMemory:
         del self.fea_pairs_seq[:]
         del self.pred_idx_seq[:]
         del self.succ_idx_seq[:]
+        del self.mutex_idx_seq[:]
         del self.action_seq[:]
         del self.reward_seq[:]
         del self.val_seq[:]
