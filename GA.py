@@ -18,14 +18,21 @@ class Activity:
     """Activity 정보"""
     id: int
     project_id: int
-    duration: int
+    duration: int  # 평균 duration (후방 호환)
     eligible_teams: List[int]  # 이 activity를 수행할 수 있는 팀 리스트
     predecessors: List[int]  # 선행 activity ID 리스트
     mutually_exclusive: List[int] = None  # 동시 수행 불가 activity ID 리스트
-    
+    duration_by_team: Dict[int, int] = None  # team_id -> duration 매핑
+
     def __post_init__(self):
         if self.mutually_exclusive is None:
             self.mutually_exclusive = []
+
+    def get_duration(self, team_id: int) -> int:
+        """team별 duration 반환. duration_by_team이 없으면 평균 duration 사용"""
+        if self.duration_by_team and team_id in self.duration_by_team:
+            return self.duration_by_team[team_id]
+        return self.duration
 
 
 @dataclass
@@ -183,7 +190,7 @@ class GeneticAlgorithm:
                 continue
             if other_act.id in scheduled_activities:
                 continue
-            if other_act.duration > idle_time:
+            if other_act.get_duration(team_id) > idle_time:
                 continue
             # Team eligibility
             if other_act.eligible_teams and team_id not in other_act.eligible_teams:
@@ -323,7 +330,7 @@ class GeneticAlgorithm:
 
                 # 스케줄에 추가
                 start_time = earliest_start
-                end_time = start_time + activity.duration
+                end_time = start_time + activity.get_duration(team_id)
                 schedule[act_id] = (start_time, end_time, team_id)
                 scheduled_activities.add(act_id)
                 newly_scheduled += 1
@@ -435,7 +442,7 @@ class GeneticAlgorithm:
 
                 # 스케줄에 추가
                 start_time = earliest_start
-                end_time = start_time + activity.duration
+                end_time = start_time + activity.get_duration(team_id)
                 schedule[act_id] = (start_time, end_time, team_id)
                 scheduled_activities.add(act_id)
                 scheduled_in_this_pass = True
@@ -750,7 +757,7 @@ class GeneticAlgorithm:
         for start, end, act_id, team_id in all_schedule:
             activity = self.activity_dict[act_id]
             print(f"{start:<8} {end:<8} Activity {act_id:<4} Team {team_id:<4} "
-                  f"(dur={activity.duration})")
+                  f"(dur={activity.get_duration(team_id)})")
         
         print("\n[프로젝트별 상세 스케줄]")
         # 프로젝트별로 정리
@@ -773,7 +780,7 @@ class GeneticAlgorithm:
                 pred_str = f"선행: {activity.predecessors}" if activity.predecessors else "선행: 없음"
                 mutex_str = f", 동시불가: {activity.mutually_exclusive}" if activity.mutually_exclusive else ""
                 print(f"  Activity {act_id}: Team {team_id}, "
-                      f"Start={start}, End={end}, Duration={activity.duration}, {pred_str}{mutex_str}")
+                      f"Start={start}, End={end}, Duration={activity.get_duration(team_id)}, {pred_str}{mutex_str}")
             
             # 프로젝트 완료 시간
             if project_schedule:

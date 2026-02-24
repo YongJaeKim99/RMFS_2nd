@@ -1,5 +1,9 @@
-import gurobipy as gp
-from gurobipy import GRB
+try:
+    import gurobipy as gp
+    from gurobipy import GRB
+    HAS_GUROBI = True
+except ImportError:
+    HAS_GUROBI = False
 import random
 import matplotlib.pyplot as plt
 from dataclasses import dataclass, field
@@ -166,12 +170,28 @@ def create_random_instance(num_projects=2, num_companies=4, seed=42) -> Instance
     return inst
 
 
-def solve_rcmpsp_gurobi(inst: Instance, time_limit: int):
+def solve_rcmpsp_gurobi(inst, time_limit: int):
+    if not HAS_GUROBI:
+        print("Gurobi is not installed. Skipping MIP solve.")
+        return None
     print(f"\nSolving RCMPSP (MIP Formulation using Gurobi) for {inst.num_projects} projects...")
 
     m = gp.Model("MRCPSP_MIP")
-    M_val = sum(inst.durations) * 2
-    
+
+    # team-dependent durations: d[i][k]
+    # 후방 호환: activity_team_durations가 없으면 durations 사용
+    has_team_dur = hasattr(inst, 'activity_team_durations')
+    d = {}
+    for i in range(inst.num_activities):
+        d[i] = {}
+        for k in inst.activity_to_teams[i]:
+            if has_team_dur:
+                d[i][k] = inst.activity_team_durations[i][k]
+            else:
+                d[i][k] = inst.durations[i]
+
+    M_val = sum(max(d[i].values()) for i in range(inst.num_activities)) * 2
+
     # --- Variables ---
     # C_i: Completion Time
     C = {}
@@ -228,52 +248,52 @@ def solve_rcmpsp_gurobi(inst: Instance, time_limit: int):
         valid_teams = inst.activity_to_teams[i]
         m.addConstr(gp.quicksum(x[i, k] for k in valid_teams) == 1, name=f"Assign_{i}")
 
-    # Eq 3: Precedence (C_j >= C_i + d_j)
+    # Eq 3: Precedence (C_j >= C_i + sum_k(d[j,k] * x[j,k]))
     for j in range(inst.num_activities):
-        d_j = inst.durations[j]
+        d_j_expr = gp.quicksum(d[j][k] * x[j, k] for k in inst.activity_to_teams[j])
         for i in inst.precedences.get(j, []):
-            m.addConstr(C[j] >= C[i] + d_j, name=f"Pred_{i}_{j}")
+            m.addConstr(C[j] >= C[i] + d_j_expr, name=f"Pred_{i}_{j}")
 
-    # Eq 4 & 5: Resource Conflict (Big-M)
+    # Eq 4 & 5: Resource Conflict (Big-M) with team-dependent duration
     for i, j, k in resource_conflicts:
-        d_i = inst.durations[i]
-        d_j = inst.durations[j]
-        
-        # Eq 4: if i->j, C_j >= C_i + d_j
+        d_jk = d[j][k]
+        d_ik = d[i][k]
+
+        # Eq 4: if both on team k and i->j, C_j >= C_i + d[j,k]
         m.addConstr(
-            C[j] >= C[i] + d_j - M_val * (3 - x[i, k] - x[j, k] - y[i, j]),
+            C[j] >= C[i] + d_jk - M_val * (3 - x[i, k] - x[j, k] - y[i, j]),
             name=f"Res_Fwd_{i}_{j}_{k}"
         )
-        
-        # Eq 5: if j->i, C_i >= C_j + d_i
+
+        # Eq 5: if both on team k and j->i, C_i >= C_j + d[i,k]
         m.addConstr(
-            C[i] >= C[j] + d_i - M_val * (2 - x[i, k] - x[j, k] + y[i, j]),
+            C[i] >= C[j] + d_ik - M_val * (2 - x[i, k] - x[j, k] + y[i, j]),
             name=f"Res_Bwd_{i}_{j}_{k}"
         )
 
-    # Eq 6 & 7: No-Overlap (Big-M)
+    # Eq 6 & 7: No-Overlap (Big-M) with team-dependent duration
     for i, j in ct_pairs:
-        d_i = inst.durations[i]
-        d_j = inst.durations[j]
-        
-        # Eq 6: C_j + d_j >= C_i
+        d_j_expr = gp.quicksum(d[j][k] * x[j, k] for k in inst.activity_to_teams[j])
+        d_i_expr = gp.quicksum(d[i][k] * x[i, k] for k in inst.activity_to_teams[i])
+
+        # Eq 6: if i before j, C_j >= C_i + d_j
         m.addConstr(
-            C[j] >= C[i] + d_j - M_val * (1 - z[i, j]),
+            C[j] >= C[i] + d_j_expr - M_val * (1 - z[i, j]),
             name=f"CT_1_{i}_{j}"
         )
-        
-        # Eq 7: C_i + d_i >= C_j
+
+        # Eq 7: if j before i, C_i >= C_j + d_i
         m.addConstr(
-            C[i] >= C[j] + d_i - M_val * z[i, j],
+            C[i] >= C[j] + d_i_expr - M_val * z[i, j],
             name=f"CT_2_{i}_{j}"
         )
 
-    # Eq 8: Release Time (C_i >= d_i + RT_p)
+    # Eq 8: Release Time (C_i >= sum_k(d[i,k]*x[i,k]) + RT_p)
     for i in range(inst.num_activities):
         p_id = inst.activity_to_project[i]
         rt_p = inst.release_times[p_id]
-        d_i = inst.durations[i]
-        m.addConstr(C[i] >= d_i + rt_p, name=f"Release_{i}")
+        d_i_expr = gp.quicksum(d[i][k] * x[i, k] for k in inst.activity_to_teams[i])
+        m.addConstr(C[i] >= d_i_expr + rt_p, name=f"Release_{i}")
 
     # Eq 9: Tardiness (T_p >= C_i - DD_p)
     for i in range(inst.num_activities):
@@ -295,17 +315,19 @@ def solve_rcmpsp_gurobi(inst: Instance, time_limit: int):
         else:
             print(f"Feasible solution found! Objective: {m.ObjVal} Time: {m.Runtime:.2f}s")
         
-        # Recover Start Times
-        start_times = {}
-        for i in range(inst.num_activities):
-            start_times[i] = C[i].X - inst.durations[i]
-        
         # Recover Assigned Teams
         assigned_teams = {}
         for (i, t), var in x.items():
             if var.X > 0.5:
                 assigned_teams[i] = t
-        
+
+        # Recover Start Times (using assigned team's duration)
+        start_times = {}
+        for i in range(inst.num_activities):
+            t = assigned_teams.get(i)
+            dur_i = d[i][t] if t is not None else inst.durations[i]
+            start_times[i] = C[i].X - dur_i
+
         return m.ObjVal, start_times, assigned_teams
     
     elif m.Status == GRB.TIME_LIMIT:
@@ -317,7 +339,7 @@ def solve_rcmpsp_gurobi(inst: Instance, time_limit: int):
         return None
 
 
-def solve_rcmpsp_cp(inst: Instance, time_limit: int):
+def solve_rcmpsp_cp(inst, time_limit: int):
     """
     Solves the Multi-Mode Resource Constrained Project Scheduling Problem (MRCPSP)
     using Google OR-Tools CP-SAT solver.
@@ -326,62 +348,75 @@ def solve_rcmpsp_cp(inst: Instance, time_limit: int):
     print(f"\nSolving RCMPSP (CP-SAT Formulation) for {inst.num_projects} projects...")
 
     model = cp_model.CpModel()
-    
-    # Horizon Calculation (Upper bound for time)
-    # CP-SAT requires integer domains. Assuming durations/times are integers.
-    horizon = sum(inst.durations) * 2
-    
+
+    # team-dependent durations: d[i][k]
+    has_team_dur = hasattr(inst, 'activity_team_durations')
+    d = {}
+    for i in range(inst.num_activities):
+        d[i] = {}
+        for k in inst.activity_to_teams[i]:
+            if has_team_dur:
+                d[i][k] = inst.activity_team_durations[i][k]
+            else:
+                d[i][k] = inst.durations[i]
+
+    # Horizon Calculation
+    horizon = sum(max(d[i].values()) for i in range(inst.num_activities)) * 2
+
     # --- Variables ---
-    
-    # 1. Interval Variables and Team Assignments
-    # We create a 'Master' interval for the activity, and 'Optional' intervals for each team option.
-    
+
     intervals = {}        # Master intervals for activities (I_i)
-    starts = {}           # Start time variables (Start(I_i))
-    ends = {}             # End time variables (End(I_i))
-    presences = {}        # (i, k) -> BoolVar (equivalent to x[i,k])
-    
-    # Store optional intervals by team to enforce resource constraints later
-    intervals_per_team = {k: [] for k in range(inst.num_teams)} # Assuming inst.num_teams exists or derived
-    # If inst.num_teams is not explicit, we can collect all unique team IDs from activity_to_teams
+    starts = {}           # Start time variables
+    ends = {}             # End time variables
+    durations_var = {}    # Duration variables (team-dependent)
+    presences = {}        # (i, k) -> BoolVar
+
     all_teams = set()
     for teams in inst.activity_to_teams.values():
         all_teams.update(teams)
     intervals_per_team = {k: [] for k in all_teams}
 
     for i in range(inst.num_activities):
-        duration = inst.durations[i]
-        
-        # Master Interval variables
+        valid_teams = inst.activity_to_teams[i]
+        team_durs = [d[i][k] for k in valid_teams]
+
         start_var = model.NewIntVar(0, horizon, f'start_{i}')
         end_var = model.NewIntVar(0, horizon, f'end_{i}')
-        # Master interval (I_i) - strictly speaking we define it via the Alternative constraint below
-        # But to use it in Precedence/Tardiness, we keep track of start/end vars.
-        interval_var = model.NewIntervalVar(start_var, duration, end_var, f'interval_{i}')
-        
+
+        # Duration variable with domain restricted to possible team durations
+        if len(set(team_durs)) == 1:
+            # All teams have same duration — fixed
+            dur_var = team_durs[0]
+        else:
+            dur_var = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(sorted(set(team_durs))), f'dur_{i}'
+            )
+
+        interval_var = model.NewIntervalVar(start_var, dur_var, end_var, f'interval_{i}')
+
         intervals[i] = interval_var
         starts[i] = start_var
         ends[i] = end_var
-        
-        # Optional Intervals for each valid team (Alternative constraint)
-        valid_teams = inst.activity_to_teams[i]
+        durations_var[i] = dur_var
+
         team_presences = []
-        
+
         for t in valid_teams:
-            # Boolean variable: is team t selected for activity i? (x_{i,t})
             is_present = model.NewBoolVar(f'pres_{i}_{t}')
             presences[(i, t)] = is_present
             team_presences.append(is_present)
-            
-            # Optional Interval: active only if is_present is True (O_{i,t})
+
+            # Link duration to team selection
+            if not isinstance(dur_var, int):
+                model.Add(dur_var == d[i][t]).OnlyEnforceIf(is_present)
+
+            # Optional interval with team-specific fixed duration for NoOverlap
             opt_interval = model.NewOptionalIntervalVar(
-                start_var, duration, end_var, is_present, f'opt_interval_{i}_{t}'
+                start_var, d[i][t], end_var, is_present, f'opt_interval_{i}_{t}'
             )
-            
             intervals_per_team[t].append(opt_interval)
-        
-        # Constraint: Alternative(I_i, {O_{i,k} ...})
-        # Exactly one team must be chosen, and the master interval synchronizes with it.
+
+        # Exactly one team must be chosen
         model.Add(sum(team_presences) == 1)
 
     # 2. Project Tardiness Variables (T_p)

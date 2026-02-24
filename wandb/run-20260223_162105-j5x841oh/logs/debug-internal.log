@@ -1,0 +1,16 @@
+{"time":"2026-02-23T16:21:05.3785538+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260223_162105-j5x841oh\\logs\\debug-core.log"}
+{"time":"2026-02-23T16:21:05.7381266+09:00","level":"INFO","msg":"created new stream","id":"j5x841oh"}
+{"time":"2026-02-23T16:21:05.7387413+09:00","level":"INFO","msg":"stream: started","id":"j5x841oh"}
+{"time":"2026-02-23T16:21:05.7387413+09:00","level":"INFO","msg":"handler: started","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:05.7387413+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:05.7387413+09:00","level":"INFO","msg":"sender: started","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:06.100861+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-23T16:21:15.0177424+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-23T16:21:15.0177424+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-23T16:21:16.001659+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-23T16:21:16.0298939+09:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading history steps 0-0, summary, console lines 0-9","runtime_seconds":0.0282349}],"total_operations":1}}
+{"time":"2026-02-23T16:21:16.3815776+09:00","level":"INFO","msg":"stream: closing","id":"j5x841oh"}
+{"time":"2026-02-23T16:21:16.3815776+09:00","level":"INFO","msg":"handler: closed","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:16.3815776+09:00","level":"INFO","msg":"sender: closed","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:16.3815776+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"j5x841oh"}
+{"time":"2026-02-23T16:21:16.382626+09:00","level":"INFO","msg":"stream: closed","id":"j5x841oh"}

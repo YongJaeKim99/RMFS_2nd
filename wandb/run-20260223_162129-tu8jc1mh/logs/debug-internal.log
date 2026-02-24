@@ -1,0 +1,39 @@
+{"time":"2026-02-23T16:21:29.6938015+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260223_162129-tu8jc1mh\\logs\\debug-core.log"}
+{"time":"2026-02-23T16:21:30.1582562+09:00","level":"INFO","msg":"created new stream","id":"tu8jc1mh"}
+{"time":"2026-02-23T16:21:30.1582562+09:00","level":"INFO","msg":"stream: started","id":"tu8jc1mh"}
+{"time":"2026-02-23T16:21:30.1582562+09:00","level":"INFO","msg":"handler: started","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:21:30.1582562+09:00","level":"INFO","msg":"sender: started","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:21:30.1582562+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:21:30.6368078+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-23T16:21:45.840117+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:22:00.7959553+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:22:15.8113541+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:22:30.8188821+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:22:45.761446+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:23:00.7616235+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:23:15.768855+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:23:30.8213378+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:23:45.7952775+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:24:00.8602045+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:24:15.8087902+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:24:30.8509901+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:24:45.7583745+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:25:00.7881294+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:25:15.93598+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:25:30.9929285+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:25:45.7410269+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:26:00.8561946+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:26:15.7355366+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:26:30.7775873+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:26:45.737042+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:27:00.8336679+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:27:15.7673121+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-23T16:27:22.947775+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-23T16:27:22.947775+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-23T16:27:23.9611274+09:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading wandb-summary.json","runtime_seconds":0.2291774,"progress":"377B/377B"},{"desc":"uploading output.log","runtime_seconds":0.2291774,"progress":"2.5KB/2.5KB"},{"desc":"uploading config.yaml","runtime_seconds":0.0618079,"progress":"1.0KB/1.0KB"}],"total_operations":3}}
+{"time":"2026-02-23T16:27:24.1581015+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-23T16:27:24.4616062+09:00","level":"INFO","msg":"stream: closing","id":"tu8jc1mh"}
+{"time":"2026-02-23T16:27:24.4616062+09:00","level":"INFO","msg":"handler: closed","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:27:24.4616062+09:00","level":"INFO","msg":"sender: closed","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:27:24.4616062+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"tu8jc1mh"}
+{"time":"2026-02-23T16:27:24.4626082+09:00","level":"INFO","msg":"stream: closed","id":"tu8jc1mh"}

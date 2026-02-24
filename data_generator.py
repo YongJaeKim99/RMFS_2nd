@@ -130,14 +130,16 @@ def generate_scheduling_data_batch(env_params):
             )
             projects.append(project)
         
-        # Mutually exclusive 제약 추가 (프로젝트 간에도 가능)
+        # Mutually exclusive 제약 추가 (같은 프로젝트 내 activity 간에만)
         for i, act_i in enumerate(all_activities):
             for j in range(i + 1, len(all_activities)):
-                # 같은 프로젝트 내에서는 선행 관계가 있으면 mutex 생성 안 함
-                if act_i.project_id == all_activities[j].project_id:
-                    if all_activities[j].id in act_i.predecessors:
-                        continue
-                
+                # 다른 프로젝트면 스킵
+                if act_i.project_id != all_activities[j].project_id:
+                    continue
+                # 선행 관계가 있으면 mutex 생성 안 함
+                if all_activities[j].id in act_i.predecessors:
+                    continue
+
                 # mutex_prob 확률로 동시 불가 제약 생성
                 if random.random() < mutex_prob:
                     act_i.mutually_exclusive.append(all_activities[j].id)
@@ -310,6 +312,7 @@ def convert_problem_to_ga_format(problem, batch_idx, num_teams):
     
     # 배치 데이터 추출
     activity_duration = problem['activity_duration'][batch_idx]  # (max_N_A,)
+    activity_team_dur = problem['activity_team_duration'][batch_idx]  # (max_N_A, N_T)
     activity_project = problem['activity_project'][batch_idx]  # (max_N_A,)
     activity_eligible_teams = problem['activity_eligible_teams'][batch_idx]  # (max_N_A, N_T)
     activity_predecessors = problem['activity_predecessors'][batch_idx]  # (max_N_A, max_preds)
@@ -345,13 +348,19 @@ def convert_problem_to_ga_format(problem, batch_idx, num_teams):
             mutex_activities = activity_mutex[act_id]
             valid_mutex = mutex_activities[mutex_activities >= 0].tolist()
             
+            # Team별 duration 추출
+            dur_by_team = {}
+            for t in eligible_teams:
+                dur_by_team[t] = max(1, round(activity_team_dur[act_id][t].item()))
+
             ga_activity = GAActivity(
                 id=act_id,
                 project_id=p,
                 duration=int(activity_duration[act_id].item()),
                 eligible_teams=eligible_teams,
                 predecessors=valid_preds,
-                mutually_exclusive=valid_mutex
+                mutually_exclusive=valid_mutex,
+                duration_by_team=dur_by_team
             )
             ga_activities.append(ga_activity)
         
@@ -365,6 +374,86 @@ def convert_problem_to_ga_format(problem, batch_idx, num_teams):
         ga_projects.append(ga_project)
     
     return ga_projects
+
+
+def convert_problem_to_mip_format(problem, batch_idx):
+    """
+    Pickle 데이터를 MIP/CP 솔버 형식으로 변환
+
+    Args:
+        problem: generate_scheduling_data_batch()로 생성된 pickle 데이터
+        batch_idx: 추출할 배치 인덱스
+
+    Returns:
+        SimpleNamespace: samsung_MIP.py 솔버와 호환되는 인스턴스 객체
+    """
+    from types import SimpleNamespace
+
+    # 배치 데이터 추출
+    num_activities = problem['num_activities'][batch_idx].item()
+    activity_duration = problem['activity_duration'][batch_idx]          # (max_N_A,)
+    activity_team_dur = problem['activity_team_duration'][batch_idx]     # (max_N_A, N_T)
+    activity_project = problem['activity_project'][batch_idx]            # (max_N_A,)
+    activity_eligible_teams = problem['activity_eligible_teams'][batch_idx]  # (max_N_A, N_T)
+    activity_predecessors = problem['activity_predecessors'][batch_idx]  # (max_N_A, max_preds)
+    activity_mutex = problem['activity_mutex'][batch_idx]                # (max_N_A, max_mutex)
+    project_release_time = problem['project_release_time'][batch_idx]    # (N_P,)
+    project_due_date = problem['project_due_date'][batch_idx]            # (N_P,)
+
+    N_P = project_release_time.shape[0]
+    N_T = activity_eligible_teams.shape[1]
+
+    # activity_to_teams: Dict[int, List[int]]
+    activity_to_teams = {}
+    for a in range(num_activities):
+        teams = activity_eligible_teams[a].nonzero(as_tuple=False).squeeze(-1).tolist()
+        if isinstance(teams, int):
+            teams = [teams]
+        activity_to_teams[a] = teams
+
+    # activity_team_durations: Dict[int, Dict[int, int]] — (activity, team) → duration
+    activity_team_durations = {}
+    for a in range(num_activities):
+        team_durs = {}
+        for t in activity_to_teams[a]:
+            team_durs[t] = max(1, round(activity_team_dur[a][t].item()))
+        activity_team_durations[a] = team_durs
+
+    # durations: List[int] — 평균 (후방 호환용, horizon 계산 등)
+    durations = [max(1, round(activity_duration[a].item())) for a in range(num_activities)]
+
+    # activity_to_project: Dict[int, int]
+    activity_to_project = {a: activity_project[a].item() for a in range(num_activities)}
+
+    # precedences: Dict[int, List[int]] (-1 패딩 제거)
+    precedences = {}
+    for a in range(num_activities):
+        preds = activity_predecessors[a]
+        precedences[a] = preds[preds >= 0].tolist()
+
+    # nooverlaps: Dict[int, List[int]] (mutex → nooverlap, -1 패딩 제거)
+    nooverlaps = {}
+    for a in range(num_activities):
+        mutex = activity_mutex[a]
+        nooverlaps[a] = mutex[mutex >= 0].tolist()
+
+    # release_times / due_dates: Dict[int, int]
+    release_times = {p: round(project_release_time[p].item()) for p in range(N_P)}
+    due_dates = {p: round(project_due_date[p].item()) for p in range(N_P)}
+
+    return SimpleNamespace(
+        num_activities=num_activities,
+        num_projects=N_P,
+        num_teams=N_T,
+        durations=durations,
+        activity_team_durations=activity_team_durations,
+        activity_to_teams=activity_to_teams,
+        activity_to_project=activity_to_project,
+        precedences=precedences,
+        nooverlaps=nooverlaps,
+        release_times=release_times,
+        due_dates=due_dates,
+    )
 
 
 if __name__ == "__main__":

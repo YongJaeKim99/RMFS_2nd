@@ -12,7 +12,7 @@ import random
 from trainer import Scheduling_Trainer
 from scheduling_env import SchedulingEnv
 from GA import GeneticAlgorithm, Activity, Project
-from gantt_chart import create_gantt_chart_from_env, create_gantt_chart_from_ga_solution, create_precedence_graph
+from gantt_chart import create_gantt_chart_from_env, create_gantt_chart_from_ga_solution, create_gantt_chart_from_schedule, create_precedence_graph
 
 # -----------------------------
 # 0) CPU 디바이스로 고정 (추론 시에는 CPU로)
@@ -33,19 +33,19 @@ if __name__ == "__main__":
     # -----------------------------
     # 1) 체크포인트 설정
     # -----------------------------
-    CHECKPOINT_FOLDER = "20260219_160424_tardiness_DANIEL_PPO"
-    CHECKPOINT_FILE = "epoch40.pt"
+    CHECKPOINT_FOLDER = "20260224_085429_tardiness_DANIEL_PPO"
+    CHECKPOINT_FILE = "best_model.pt"
     TEST_ALL_CHECKPOINTS = False
 
     # -----------------------------
     # 2-1) 학습 알고리즘 설정 (체크포인트와 일치해야 함)
     # -----------------------------
-    ALGORITHM_TYPE = 'ppo'  # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'reinforce'  # 'reinforce' or 'ppo'
 
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["GA"]  # ["RL"], ["GA"], 또는 ["RL", "GA"]
+    test_algorithms = ["RL","GA","MIP"]  # ["RL"], ["GA"], ["MIP"], 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -59,9 +59,13 @@ if __name__ == "__main__":
     GA_DOMINANCE_RULE = True
     GA_REPEATS = 3
 
+    # MIP/CP 설정
+    MIP_SOLVER = "cp"           # "gurobi", "cp", "both"
+    MIP_TIME_LIMIT = 30        # 인스턴스당 시간 제한 (초)
+
     # 간트차트 생성 설정
-    SAVE_GANTT_CHART = False
-    SHOW_GANTT_CHART = False
+    SAVE_GANTT_CHART = True
+    SHOW_GANTT_CHART = True
 
     # =================================================================
     # 🎯 목적함수 선택
@@ -75,6 +79,12 @@ if __name__ == "__main__":
     # 각 pickle 파일은 서로 다른 인스턴스 사이즈/데이터를 의미하며,
     # 파일 내부에 여러 인스턴스가 배치(batch)로 들어있음
     TEST_DATA_DIR = "data/test"
+
+    # -----------------------------
+    # 인스턴스 범위 설정
+    # -----------------------------
+    INSTANCE_START = 0  # 시작 인스턴스 번호 (None이면 0부터)
+    INSTANCE_END = 1    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
 
     # -----------------------------
     # 기타 설정
@@ -126,6 +136,8 @@ if __name__ == "__main__":
     print(f"  📌 OBJECTIVE: {OBJECTIVE}")
     print(f"  📌 PICKLE FILES: {len(pickle_files)}개")
     print(f"  📌 ALGORITHMS: {', '.join(test_algorithms)}")
+    _inst_range = f"[{INSTANCE_START if INSTANCE_START is not None else 0}, {INSTANCE_END if INSTANCE_END is not None else 'end'})"
+    print(f"  📌 INSTANCE RANGE: {_inst_range}")
     if "GA" in test_algorithms:
         print(f"  📌 GA Settings:")
         print(f"     - Population: {GA_POPULATION_SIZE}")
@@ -135,6 +147,10 @@ if __name__ == "__main__":
         print(f"     - Mutex Mode: {GA_MUTEX_MODE}")
         print(f"     - Dominance Rule: {GA_DOMINANCE_RULE}")
         print(f"     - Repeats/Instance: {GA_REPEATS}")
+    if "MIP" in test_algorithms:
+        print(f"  📌 MIP/CP Settings:")
+        print(f"     - Solver: {MIP_SOLVER}")
+        print(f"     - Time Limit: {MIP_TIME_LIMIT}s")
     print(f"  📌 SAVE_GANTT_CHART: {SAVE_GANTT_CHART}")
     print("="*50 + "\n")
 
@@ -309,6 +325,58 @@ if __name__ == "__main__":
         print(f"결과가 {output_path}에 저장되었습니다.")
         return output_path
 
+    def save_mip_results_to_excel(mip_results, pickle_name, solver_name):
+        """MIP/CP 결과를 엑셀 파일로 저장"""
+        output_path = session_results_dir / f'RCMPSP_{solver_name}_{pickle_name}.xlsx'
+
+        exp_rows = [
+            {'Item': 'Algorithm',     'Value': solver_name},
+            {'Item': 'Data File',     'Value': pickle_name},
+            {'Item': 'Time Limit',    'Value': MIP_TIME_LIMIT},
+            {'Item': 'Device',        'Value': 'CPU'},
+            {'Item': 'Num Instances', 'Value': len(mip_results)},
+        ]
+        if SEED is not None:
+            exp_rows.append({'Item': 'Random Seed', 'Value': SEED})
+        experiment_info_df = pd.DataFrame(exp_rows, columns=['Item', 'Value'])
+
+        if not mip_results:
+            print(f"결과 데이터가 없습니다: {solver_name}")
+            return None
+
+        detailed_data = []
+        for r in mip_results:
+            detailed_data.append({
+                'Instance': r['instance'],
+                OBJECTIVE.capitalize(): r['objective_value'],
+                'Status': r['status'],
+                'Runtime': r['runtime'],
+            })
+        detailed_df = pd.DataFrame(detailed_data)
+
+        valid_objs = [r['objective_value'] for r in mip_results
+                      if r['objective_value'] is not None]
+        overall_row = {
+            'Algorithm': solver_name,
+            f'Avg {OBJECTIVE.capitalize()}': np.mean(valid_objs) if valid_objs else None,
+            'Solved': len(valid_objs),
+            'Total': len(mip_results),
+            'Avg Runtime': np.mean([r['runtime'] for r in mip_results]),
+        }
+        overall_avg_df = pd.DataFrame([overall_row])
+
+        for df in [detailed_df, overall_avg_df]:
+            num_cols = df.select_dtypes(include=[np.number]).columns
+            df[num_cols] = df[num_cols].round(4)
+
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            experiment_info_df.to_excel(writer, sheet_name='Experiment_Info', index=False)
+            detailed_df.to_excel(writer,        sheet_name='Detailed_Results', index=False)
+            overall_avg_df.to_excel(writer,     sheet_name='Overall_Average', index=False)
+
+        print(f"결과가 {output_path}에 저장되었습니다.")
+        return output_path
+
     # =================================================================
     # 체크포인트 로드 준비 (RL)
     # =================================================================
@@ -406,12 +474,17 @@ if __name__ == "__main__":
         with open(pickle_path, 'rb') as f:
             problem = pickle.load(f)
 
-        num_instances = problem['num_activities'].shape[0]
-        print(f"   인스턴스 수: {num_instances}")
+        total_instances = problem['num_activities'].shape[0]
+        inst_start = INSTANCE_START if INSTANCE_START is not None else 0
+        inst_end = INSTANCE_END if INSTANCE_END is not None else total_instances
+        inst_start = max(0, min(inst_start, total_instances))
+        inst_end = max(inst_start, min(inst_end, total_instances))
+        num_instances = inst_end - inst_start
+        print(f"   전체 인스턴스: {total_instances}, 실행 범위: [{inst_start}, {inst_end}) ({num_instances}개)")
 
-        # 이 pickle에 맞는 env_params 구성
+        # 이 pickle에 맞는 env_params 구성 (RL은 전체 배치로 추론)
         env_params = {
-            'batch_size': num_instances,
+            'batch_size': total_instances,
             'pomo_size': 1,
             'objective': OBJECTIVE,
             'debug_env': DEBUG_ENV,
@@ -449,8 +522,8 @@ if __name__ == "__main__":
 
             from data_generator import convert_problem_to_ga_format
 
-            for i in range(num_instances):
-                print(f"\n   📋 Instance {i}/{num_instances-1}")
+            for i in range(inst_start, inst_end):
+                print(f"\n   📋 Instance {i}/{inst_end-1}")
 
                 start_time = time.time()
 
@@ -565,6 +638,127 @@ if __name__ == "__main__":
                     saved_files.append(output_path)
 
         # =============================================
+        # MIP/CP 실행 (인스턴스별 for문)
+        # =============================================
+        if "MIP" in test_algorithms:
+            if OBJECTIVE != 'tardiness':
+                print(f"\n  ⚠️ MIP/CP 솔버는 현재 tardiness만 지원합니다. (현재: {OBJECTIVE}) → 스킵")
+            else:
+                from data_generator import convert_problem_to_mip_format
+                from samsung_MIP import solve_rcmpsp_cp, HAS_GUROBI
+                if HAS_GUROBI:
+                    from samsung_MIP import solve_rcmpsp_gurobi
+
+                # 실행할 솔버 목록 결정
+                solvers_to_run = []
+                if MIP_SOLVER in ("gurobi", "both"):
+                    if HAS_GUROBI:
+                        solvers_to_run.append(("Gurobi", solve_rcmpsp_gurobi))
+                    else:
+                        print("  ⚠️ Gurobi가 설치되지 않았습니다. MIP 솔버를 건너뜁니다.")
+                if MIP_SOLVER in ("cp", "both"):
+                    solvers_to_run.append(("CP-SAT", solve_rcmpsp_cp))
+
+                for solver_name, solver_fn in solvers_to_run:
+                    print(f"\n  --- {solver_name} ({pickle_name}) ---")
+                    mip_results = []
+
+                    for i in range(inst_start, inst_end):
+                        print(f"\n   📋 Instance {i}/{inst_end-1}")
+
+                        try:
+                            inst = convert_problem_to_mip_format(problem, i)
+
+                            start_time = time.time()
+                            result = solver_fn(inst, MIP_TIME_LIMIT)
+                            runtime = time.time() - start_time
+
+                            if result is not None:
+                                obj_val, start_times_sol, assigned_teams_sol = result
+                                status = "optimal_or_feasible"
+                                print(f"     [{solver_name}][Instance {i}] "
+                                      f"{OBJECTIVE}: {obj_val:.4f}, "
+                                      f"Runtime: {runtime:.4f}s")
+
+                                # 간트차트 생성
+                                if SAVE_GANTT_CHART:
+                                    try:
+                                        # schedule: {act_id: (start, end, team)}
+                                        schedule = {}
+                                        for act_id in range(inst.num_activities):
+                                            t = assigned_teams_sol.get(act_id)
+                                            if t is not None:
+                                                s = start_times_sol[act_id]
+                                                dur = inst.activity_team_durations[act_id][t]
+                                                schedule[act_id] = (s, s + dur, t)
+
+                                        project_due_dates = {p: inst.due_dates[p] for p in range(inst.num_projects)}
+
+                                        create_gantt_chart_from_schedule(
+                                            schedule=schedule,
+                                            activity_to_project=inst.activity_to_project,
+                                            num_teams=inst.num_teams,
+                                            instance_name=f"{pickle_name}_instance_{i}",
+                                            algorithm=solver_name,
+                                            objective_value=obj_val,
+                                            project_due_dates=project_due_dates,
+                                            save_dir=gantt_dir,
+                                            show=SHOW_GANTT_CHART
+                                        )
+
+                                        if i not in precedence_graphs_created:
+                                            create_precedence_graph(
+                                                activity_predecessors=inst.precedences,
+                                                activity_mutex=inst.nooverlaps,
+                                                activity_to_project=inst.activity_to_project,
+                                                instance_name=f"{pickle_name}_instance_{i}",
+                                                save_dir=gantt_dir,
+                                                show=SHOW_GANTT_CHART
+                                            )
+                                            precedence_graphs_created.add(i)
+                                    except Exception as e:
+                                        print(f"     ⚠️ 간트차트/그래프 생성 실패: {e}")
+                            else:
+                                obj_val = None
+                                status = "no_solution"
+                                print(f"     [{solver_name}][Instance {i}] "
+                                      f"No solution found, Runtime: {runtime:.4f}s")
+
+                            mip_results.append({
+                                'instance': i,
+                                'objective_value': obj_val,
+                                'status': status,
+                                'runtime': runtime,
+                            })
+
+                        except Exception as e:
+                            print(f"     ❌ [{solver_name}][Instance {i}] 오류: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            mip_results.append({
+                                'instance': i,
+                                'objective_value': None,
+                                'status': 'error',
+                                'runtime': 0,
+                            })
+
+                    # 요약
+                    if mip_results:
+                        valid_objs = [r['objective_value'] for r in mip_results
+                                      if r['objective_value'] is not None]
+                        if valid_objs:
+                            avg_obj = np.mean(valid_objs)
+                            solved = len(valid_objs)
+                            algorithm_summaries[f'{solver_name} ({pickle_name})'] = avg_obj
+                            print(f"  {solver_name} 평균 {OBJECTIVE}: {avg_obj:.4f} "
+                                  f"({solved}/{num_instances} solved)")
+
+                        output_path = save_mip_results_to_excel(
+                            mip_results, pickle_name, solver_name)
+                        if output_path:
+                            saved_files.append(output_path)
+
+        # =============================================
         # RL 실행 (배치 추론)
         # =============================================
         for ckpt_path in all_ckpts:
@@ -603,7 +797,7 @@ if __name__ == "__main__":
                 traceback.print_exc()
                 continue
 
-            print(f"  📋 배치 추론 시작 ({num_instances}개 인스턴스)")
+            print(f"  📋 배치 추론 시작 (전체 {total_instances}개, 결과 범위 [{inst_start},{inst_end}))")
             start_time = time.time()
 
             try:
@@ -640,14 +834,14 @@ if __name__ == "__main__":
                             team_idx.to(test_env.device)
                         )
 
-                    scores = test_env._get_obj()  # (num_instances,)
+                    scores = test_env._get_obj()  # (total_instances,)
 
                 end_time = time.time()
                 total_runtime = end_time - start_time
-                avg_runtime = total_runtime / num_instances
+                avg_runtime = total_runtime / total_instances
 
                 rl_results = []
-                for i in range(num_instances):
+                for i in range(inst_start, inst_end):
                     score_i = scores[i].item()
                     rl_results.append({
                         'algorithm': 'RL',
@@ -660,32 +854,49 @@ if __name__ == "__main__":
                 print(f"\n     Total: {total_runtime:.4f}s (avg {avg_runtime:.4f}s/instance)")
 
                 if SAVE_GANTT_CHART:
-                    for i in range(num_instances):
+                    for i in range(inst_start, inst_end):
                         try:
-                            create_gantt_chart_from_env(
-                                env=test_env,
+                            num_act = test_env.num_activities[i].item()
+
+                            # env에서 schedule 추출
+                            schedule = {}
+                            act_to_proj = {}
+                            for act_id in range(num_act):
+                                if test_env.activity_started[i, act_id].item():
+                                    s = test_env.activity_start_time[i, act_id].item()
+                                    e = test_env.activity_end_time[i, act_id].item()
+                                    t = test_env.activity_assigned_team[i, act_id].item()
+                                    schedule[act_id] = (s, e, t)
+                                act_to_proj[act_id] = test_env.activity_project[i, act_id].item()
+
+                            proj_due = {}
+                            for p in range(test_env.N_P):
+                                proj_due[p] = test_env.project_due_date[i, p].item()
+
+                            create_gantt_chart_from_schedule(
+                                schedule=schedule,
+                                activity_to_project=act_to_proj,
+                                num_teams=test_env.N_T,
                                 instance_name=f"{pickle_name}_instance_{i}",
                                 algorithm="RL",
                                 objective_value=scores[i].item(),
+                                project_due_dates=proj_due,
                                 save_dir=gantt_dir,
-                                show=SHOW_GANTT_CHART,
-                                batch_idx=i
+                                show=SHOW_GANTT_CHART
                             )
+
                             if i not in precedence_graphs_created:
-                                num_act = test_env.num_activities[i].item()
                                 activity_predecessors = {}
                                 activity_mutex = {}
-                                activity_to_project = {}
                                 for act_id in range(num_act):
                                     preds = test_env.activity_predecessors[i, act_id].cpu().numpy().tolist()
                                     activity_predecessors[act_id] = [p for p in preds if p >= 0]
                                     mutex = test_env.activity_mutex[i, act_id].cpu().numpy().tolist()
                                     activity_mutex[act_id] = [m for m in mutex if m >= 0]
-                                    activity_to_project[act_id] = test_env.activity_project[i, act_id].item()
                                 create_precedence_graph(
                                     activity_predecessors=activity_predecessors,
                                     activity_mutex=activity_mutex,
-                                    activity_to_project=activity_to_project,
+                                    activity_to_project=act_to_proj,
                                     instance_name=f"{pickle_name}_instance_{i}",
                                     save_dir=gantt_dir,
                                     show=SHOW_GANTT_CHART

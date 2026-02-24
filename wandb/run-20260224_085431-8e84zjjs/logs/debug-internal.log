@@ -1,0 +1,24 @@
+{"time":"2026-02-24T08:54:32.0967981+09:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\wandb\\run-20260224_085431-8e84zjjs\\logs\\debug-core.log"}
+{"time":"2026-02-24T08:54:32.4455661+09:00","level":"INFO","msg":"created new stream","id":"8e84zjjs"}
+{"time":"2026-02-24T08:54:32.4455661+09:00","level":"INFO","msg":"stream: started","id":"8e84zjjs"}
+{"time":"2026-02-24T08:54:32.4455661+09:00","level":"INFO","msg":"handler: started","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:54:32.4455661+09:00","level":"INFO","msg":"writer: Do: started","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:54:32.4455661+09:00","level":"INFO","msg":"sender: started","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:54:32.9211511+09:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2026-02-24T08:54:48.4535887+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:55:03.0544134+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:55:18.5242976+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:55:34.1782624+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:55:48.2500225+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:56:03.7317508+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:56:18.7860367+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:56:33.0466046+09:00","level":"ERROR","msg":"monitor: error sampling metrics: Incorrect function."}
+{"time":"2026-02-24T08:56:41.2939516+09:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2026-02-24T08:56:41.2944557+09:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2026-02-24T08:56:42.3046336+09:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading config.yaml","runtime_seconds":0.2273173,"progress":"1.0KB/1.0KB"}],"total_operations":1}}
+{"time":"2026-02-24T08:56:42.3450175+09:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-02-24T08:56:42.6983857+09:00","level":"INFO","msg":"stream: closing","id":"8e84zjjs"}
+{"time":"2026-02-24T08:56:42.6983857+09:00","level":"INFO","msg":"handler: closed","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:56:42.6983857+09:00","level":"INFO","msg":"sender: closed","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:56:42.6983857+09:00","level":"INFO","msg":"writer: Close: closed","stream_id":"8e84zjjs"}
+{"time":"2026-02-24T08:56:42.6983857+09:00","level":"INFO","msg":"stream: closed","id":"8e84zjjs"}

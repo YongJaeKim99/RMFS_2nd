@@ -38,7 +38,7 @@ if __name__ == "__main__":
         EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
         BATCH_SIZE            = 16
         POMO_SIZE             = 8
-        VALIDATION_INTERVAL   = 20          # ← 매 epoch 확인 (원래: 5)
+        VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
         VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-5, 'weight_decay': 1e-6}}
@@ -86,12 +86,12 @@ if __name__ == "__main__":
     DOMINANCE_RULE = True       # True: 대기 pair의 dominance 필터링
 
     # Reward 방식 선택
-    #REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
-                            # 'stepwise': 매 step마다 dense reward (DANIEL 논문 방식, tardiness 전용)
     REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
+                            # 'stepwise': 매 step마다 dense reward (DANIEL 논문 방식, tardiness 전용)
+    #REWARD_TYPE = 'sparse'  # 'sparse': episode 끝에만 reward (기본)
 
     # Tardiness 추정 방식 (stepwise reward + feature에 사용)
-    TARDINESS_EST_TYPE = 'sbh'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
+    TARDINESS_EST_TYPE = 'simple'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
                                    # 'sbh': Shifting Bottleneck Heuristic 7-Phase (ATC + contention)
 
     # 디버그 옵션
