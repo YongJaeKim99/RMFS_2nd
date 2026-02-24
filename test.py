@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["RL","GA","MIP"]  # ["RL"], ["GA"], ["MIP"], 또는 조합
+    test_algorithms = ["RL","GA"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -59,13 +59,15 @@ if __name__ == "__main__":
     GA_DOMINANCE_RULE = True
     GA_REPEATS = 3
 
-    # MIP/CP 설정
-    MIP_SOLVER = "cp"           # "gurobi", "cp", "both"
-    MIP_TIME_LIMIT = 30        # 인스턴스당 시간 제한 (초)
+    # MIP (Gurobi) 설정
+    MIP_TIME_LIMIT = 300       # 인스턴스당 시간 제한 (초)
 
-    # 간트차트 생성 설정
-    SAVE_GANTT_CHART = True
-    SHOW_GANTT_CHART = True
+    # CP (CP-SAT) 설정
+    CP_TIME_LIMIT = 30         # 인스턴스당 시간 제한 (초)
+
+    # 간트차트 설정
+    SHOW_GANTT_CHART = False
+    SHOW_PRECEDENCE_GRAPH = False
 
     # =================================================================
     # 🎯 목적함수 선택
@@ -84,7 +86,7 @@ if __name__ == "__main__":
     # 인스턴스 범위 설정
     # -----------------------------
     INSTANCE_START = 0  # 시작 인스턴스 번호 (None이면 0부터)
-    INSTANCE_END = 1    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
+    INSTANCE_END = 10    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
 
     # -----------------------------
     # 기타 설정
@@ -148,10 +150,13 @@ if __name__ == "__main__":
         print(f"     - Dominance Rule: {GA_DOMINANCE_RULE}")
         print(f"     - Repeats/Instance: {GA_REPEATS}")
     if "MIP" in test_algorithms:
-        print(f"  📌 MIP/CP Settings:")
-        print(f"     - Solver: {MIP_SOLVER}")
+        print(f"  📌 MIP (Gurobi) Settings:")
         print(f"     - Time Limit: {MIP_TIME_LIMIT}s")
-    print(f"  📌 SAVE_GANTT_CHART: {SAVE_GANTT_CHART}")
+    if "CP" in test_algorithms:
+        print(f"  📌 CP (CP-SAT) Settings:")
+        print(f"     - Time Limit: {CP_TIME_LIMIT}s")
+    print(f"  📌 SHOW_GANTT_CHART: {SHOW_GANTT_CHART}")
+    print(f"  📌 SHOW_PRECEDENCE_GRAPH: {SHOW_PRECEDENCE_GRAPH}")
     print("="*50 + "\n")
 
     # =================================================================
@@ -197,11 +202,9 @@ if __name__ == "__main__":
         session_results_dir.mkdir(parents=True)
         print(f"✅ 결과 저장 폴더 생성: {session_results_dir}")
 
-    gantt_dir = None
-    if SAVE_GANTT_CHART:
-        gantt_dir = session_results_dir / "gantt_charts"
+    gantt_dir = session_results_dir / "gantt_charts"
+    if SHOW_GANTT_CHART or SHOW_PRECEDENCE_GRAPH:
         gantt_dir.mkdir(parents=True, exist_ok=True)
-        print(f"✅ 간트차트 저장 폴더 생성: {gantt_dir}")
 
     # =================================================================
     # 유틸 함수: 결과를 엑셀로 저장
@@ -584,7 +587,7 @@ if __name__ == "__main__":
                     rep_str = f" (best of {GA_REPEATS}, avg: {avg_objective:.4f})" if GA_REPEATS > 1 else ""
                     print(f"     [GA][Instance {i}] {OBJECTIVE}: best={best_objective:.4f}, Runtime: {runtime:.4f}s{rep_str}")
 
-                    if SAVE_GANTT_CHART:
+                    if SHOW_GANTT_CHART:
                         try:
                             project_due_dates = {proj.id: proj.due_date for proj in ga.projects}
                             create_gantt_chart_from_ga_solution(
@@ -595,25 +598,28 @@ if __name__ == "__main__":
                                 objective_value=best_objective,
                                 project_due_dates=project_due_dates,
                                 save_dir=gantt_dir,
-                                show=SHOW_GANTT_CHART
+                                show=True
                             )
-                            if i not in precedence_graphs_created:
-                                activity_predecessors = {}
-                                activity_mutex = {}
-                                for act in ga.activities:
-                                    activity_predecessors[act.id] = act.predecessors
-                                    activity_mutex[act.id] = act.mutually_exclusive
-                                create_precedence_graph(
-                                    activity_predecessors=activity_predecessors,
-                                    activity_mutex=activity_mutex,
-                                    activity_to_project=ga.activity_to_project,
-                                    instance_name=f"{pickle_name}_instance_{i}",
-                                    save_dir=gantt_dir,
-                                    show=SHOW_GANTT_CHART
-                                )
-                                precedence_graphs_created.add(i)
                         except Exception as e:
-                            print(f"     ⚠️ 간트차트/그래프 생성 실패: {e}")
+                            print(f"     ⚠️ 간트차트 생성 실패: {e}")
+                    if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
+                        try:
+                            activity_predecessors = {}
+                            activity_mutex = {}
+                            for act in ga.activities:
+                                activity_predecessors[act.id] = act.predecessors
+                                activity_mutex[act.id] = act.mutually_exclusive
+                            create_precedence_graph(
+                                activity_predecessors=activity_predecessors,
+                                activity_mutex=activity_mutex,
+                                activity_to_project=ga.activity_to_project,
+                                instance_name=f"{pickle_name}_instance_{i}",
+                                save_dir=gantt_dir,
+                                show=True
+                            )
+                            precedence_graphs_created.add(i)
+                        except Exception as e:
+                            print(f"     ⚠️ 선후관계 그래프 생성 실패: {e}")
 
                 except Exception as e:
                     print(f"     ❌ [GA][Instance {i}] 오류: {e}")
@@ -638,52 +644,38 @@ if __name__ == "__main__":
                     saved_files.append(output_path)
 
         # =============================================
-        # MIP/CP 실행 (인스턴스별 for문)
+        # MIP (Gurobi) 실행
         # =============================================
         if "MIP" in test_algorithms:
             if OBJECTIVE != 'tardiness':
-                print(f"\n  ⚠️ MIP/CP 솔버는 현재 tardiness만 지원합니다. (현재: {OBJECTIVE}) → 스킵")
+                print(f"\n  ⚠️ MIP (Gurobi) 솔버는 현재 tardiness만 지원합니다. (현재: {OBJECTIVE}) → 스킵")
             else:
                 from data_generator import convert_problem_to_mip_format
-                from samsung_MIP import solve_rcmpsp_cp, HAS_GUROBI
-                if HAS_GUROBI:
+                from samsung_MIP import HAS_GUROBI
+                if not HAS_GUROBI:
+                    print("\n  ⚠️ Gurobi가 설치되지 않았습니다. MIP를 건너뜁니다.")
+                else:
                     from samsung_MIP import solve_rcmpsp_gurobi
-
-                # 실행할 솔버 목록 결정
-                solvers_to_run = []
-                if MIP_SOLVER in ("gurobi", "both"):
-                    if HAS_GUROBI:
-                        solvers_to_run.append(("Gurobi", solve_rcmpsp_gurobi))
-                    else:
-                        print("  ⚠️ Gurobi가 설치되지 않았습니다. MIP 솔버를 건너뜁니다.")
-                if MIP_SOLVER in ("cp", "both"):
-                    solvers_to_run.append(("CP-SAT", solve_rcmpsp_cp))
-
-                for solver_name, solver_fn in solvers_to_run:
-                    print(f"\n  --- {solver_name} ({pickle_name}) ---")
+                    print(f"\n  --- MIP Gurobi ({pickle_name}) ---")
                     mip_results = []
 
                     for i in range(inst_start, inst_end):
                         print(f"\n   📋 Instance {i}/{inst_end-1}")
-
                         try:
                             inst = convert_problem_to_mip_format(problem, i)
-
                             start_time = time.time()
-                            result = solver_fn(inst, MIP_TIME_LIMIT)
+                            result = solve_rcmpsp_gurobi(inst, MIP_TIME_LIMIT)
                             runtime = time.time() - start_time
 
                             if result is not None:
-                                obj_val, start_times_sol, assigned_teams_sol = result
-                                status = "optimal_or_feasible"
-                                print(f"     [{solver_name}][Instance {i}] "
+                                obj_val, start_times_sol, assigned_teams_sol, status = result
+                                print(f"     [Gurobi][Instance {i}] "
                                       f"{OBJECTIVE}: {obj_val:.4f}, "
+                                      f"Status: {status}, "
                                       f"Runtime: {runtime:.4f}s")
 
-                                # 간트차트 생성
-                                if SAVE_GANTT_CHART:
+                                if SHOW_GANTT_CHART:
                                     try:
-                                        # schedule: {act_id: (start, end, team)}
                                         schedule = {}
                                         for act_id in range(inst.num_activities):
                                             t = assigned_teams_sol.get(act_id)
@@ -693,35 +685,36 @@ if __name__ == "__main__":
                                                 schedule[act_id] = (s, s + dur, t)
 
                                         project_due_dates = {p: inst.due_dates[p] for p in range(inst.num_projects)}
-
                                         create_gantt_chart_from_schedule(
                                             schedule=schedule,
                                             activity_to_project=inst.activity_to_project,
                                             num_teams=inst.num_teams,
                                             instance_name=f"{pickle_name}_instance_{i}",
-                                            algorithm=solver_name,
+                                            algorithm="Gurobi",
                                             objective_value=obj_val,
                                             project_due_dates=project_due_dates,
                                             save_dir=gantt_dir,
-                                            show=SHOW_GANTT_CHART
+                                            show=True
                                         )
-
-                                        if i not in precedence_graphs_created:
-                                            create_precedence_graph(
-                                                activity_predecessors=inst.precedences,
-                                                activity_mutex=inst.nooverlaps,
-                                                activity_to_project=inst.activity_to_project,
-                                                instance_name=f"{pickle_name}_instance_{i}",
-                                                save_dir=gantt_dir,
-                                                show=SHOW_GANTT_CHART
-                                            )
-                                            precedence_graphs_created.add(i)
                                     except Exception as e:
-                                        print(f"     ⚠️ 간트차트/그래프 생성 실패: {e}")
+                                        print(f"     ⚠️ 간트차트 생성 실패: {e}")
+                                if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
+                                    try:
+                                        create_precedence_graph(
+                                            activity_predecessors=inst.precedences,
+                                            activity_mutex=inst.nooverlaps,
+                                            activity_to_project=inst.activity_to_project,
+                                            instance_name=f"{pickle_name}_instance_{i}",
+                                            save_dir=gantt_dir,
+                                            show=True
+                                        )
+                                        precedence_graphs_created.add(i)
+                                    except Exception as e:
+                                        print(f"     ⚠️ 선후관계 그래프 생성 실패: {e}")
                             else:
                                 obj_val = None
                                 status = "no_solution"
-                                print(f"     [{solver_name}][Instance {i}] "
+                                print(f"     [Gurobi][Instance {i}] "
                                       f"No solution found, Runtime: {runtime:.4f}s")
 
                             mip_results.append({
@@ -730,9 +723,8 @@ if __name__ == "__main__":
                                 'status': status,
                                 'runtime': runtime,
                             })
-
                         except Exception as e:
-                            print(f"     ❌ [{solver_name}][Instance {i}] 오류: {e}")
+                            print(f"     ❌ [Gurobi][Instance {i}] 오류: {e}")
                             import traceback
                             traceback.print_exc()
                             mip_results.append({
@@ -742,21 +734,122 @@ if __name__ == "__main__":
                                 'runtime': 0,
                             })
 
-                    # 요약
                     if mip_results:
                         valid_objs = [r['objective_value'] for r in mip_results
                                       if r['objective_value'] is not None]
                         if valid_objs:
                             avg_obj = np.mean(valid_objs)
                             solved = len(valid_objs)
-                            algorithm_summaries[f'{solver_name} ({pickle_name})'] = avg_obj
-                            print(f"  {solver_name} 평균 {OBJECTIVE}: {avg_obj:.4f} "
+                            algorithm_summaries[f'Gurobi ({pickle_name})'] = avg_obj
+                            print(f"  Gurobi 평균 {OBJECTIVE}: {avg_obj:.4f} "
                                   f"({solved}/{num_instances} solved)")
 
                         output_path = save_mip_results_to_excel(
-                            mip_results, pickle_name, solver_name)
+                            mip_results, pickle_name, "Gurobi")
                         if output_path:
                             saved_files.append(output_path)
+
+        # =============================================
+        # CP (CP-SAT) 실행
+        # =============================================
+        if "CP" in test_algorithms:
+            if OBJECTIVE != 'tardiness':
+                print(f"\n  ⚠️ CP (CP-SAT) 솔버는 현재 tardiness만 지원합니다. (현재: {OBJECTIVE}) → 스킵")
+            else:
+                from data_generator import convert_problem_to_mip_format
+                from samsung_MIP import solve_rcmpsp_cp
+                print(f"\n  --- CP-SAT ({pickle_name}) ---")
+                cp_results = []
+
+                for i in range(inst_start, inst_end):
+                    print(f"\n   📋 Instance {i}/{inst_end-1}")
+                    try:
+                        inst = convert_problem_to_mip_format(problem, i)
+                        start_time = time.time()
+                        result = solve_rcmpsp_cp(inst, CP_TIME_LIMIT)
+                        runtime = time.time() - start_time
+
+                        if result is not None:
+                            obj_val, start_times_sol, assigned_teams_sol, status = result
+                            print(f"     [CP-SAT][Instance {i}] "
+                                  f"{OBJECTIVE}: {obj_val:.4f}, "
+                                  f"Status: {status}, "
+                                  f"Runtime: {runtime:.4f}s")
+
+                            if SHOW_GANTT_CHART:
+                                try:
+                                    schedule = {}
+                                    for act_id in range(inst.num_activities):
+                                        t = assigned_teams_sol.get(act_id)
+                                        if t is not None:
+                                            s = start_times_sol[act_id]
+                                            dur = inst.activity_team_durations[act_id][t]
+                                            schedule[act_id] = (s, s + dur, t)
+
+                                    project_due_dates = {p: inst.due_dates[p] for p in range(inst.num_projects)}
+                                    create_gantt_chart_from_schedule(
+                                        schedule=schedule,
+                                        activity_to_project=inst.activity_to_project,
+                                        num_teams=inst.num_teams,
+                                        instance_name=f"{pickle_name}_instance_{i}",
+                                        algorithm="CP-SAT",
+                                        objective_value=obj_val,
+                                        project_due_dates=project_due_dates,
+                                        save_dir=gantt_dir,
+                                        show=True
+                                    )
+                                except Exception as e:
+                                    print(f"     ⚠️ 간트차트 생성 실패: {e}")
+                            if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
+                                try:
+                                    create_precedence_graph(
+                                        activity_predecessors=inst.precedences,
+                                        activity_mutex=inst.nooverlaps,
+                                        activity_to_project=inst.activity_to_project,
+                                        instance_name=f"{pickle_name}_instance_{i}",
+                                        save_dir=gantt_dir,
+                                        show=True
+                                    )
+                                    precedence_graphs_created.add(i)
+                                except Exception as e:
+                                    print(f"     ⚠️ 선후관계 그래프 생성 실패: {e}")
+                        else:
+                            obj_val = None
+                            status = "no_solution"
+                            print(f"     [CP-SAT][Instance {i}] "
+                                  f"No solution found, Runtime: {runtime:.4f}s")
+
+                        cp_results.append({
+                            'instance': i,
+                            'objective_value': obj_val,
+                            'status': status,
+                            'runtime': runtime,
+                        })
+                    except Exception as e:
+                        print(f"     ❌ [CP-SAT][Instance {i}] 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        cp_results.append({
+                            'instance': i,
+                            'objective_value': None,
+                            'status': 'error',
+                            'runtime': 0,
+                        })
+
+                if cp_results:
+                    valid_objs = [r['objective_value'] for r in cp_results
+                                  if r['objective_value'] is not None]
+                    if valid_objs:
+                        avg_obj = np.mean(valid_objs)
+                        solved = len(valid_objs)
+                        algorithm_summaries[f'CP-SAT ({pickle_name})'] = avg_obj
+                        print(f"  CP-SAT 평균 {OBJECTIVE}: {avg_obj:.4f} "
+                              f"({solved}/{num_instances} solved)")
+
+                    output_path = save_mip_results_to_excel(
+                        cp_results, pickle_name, "CP-SAT")
+                    if output_path:
+                        saved_files.append(output_path)
 
         # =============================================
         # RL 실행 (배치 추론)
@@ -853,7 +946,7 @@ if __name__ == "__main__":
 
                 print(f"\n     Total: {total_runtime:.4f}s (avg {avg_runtime:.4f}s/instance)")
 
-                if SAVE_GANTT_CHART:
+                if SHOW_GANTT_CHART or SHOW_PRECEDENCE_GRAPH:
                     for i in range(inst_start, inst_end):
                         try:
                             num_act = test_env.num_activities[i].item()
@@ -869,23 +962,24 @@ if __name__ == "__main__":
                                     schedule[act_id] = (s, e, t)
                                 act_to_proj[act_id] = test_env.activity_project[i, act_id].item()
 
-                            proj_due = {}
-                            for p in range(test_env.N_P):
-                                proj_due[p] = test_env.project_due_date[i, p].item()
+                            if SHOW_GANTT_CHART:
+                                proj_due = {}
+                                for p in range(test_env.N_P):
+                                    proj_due[p] = test_env.project_due_date[i, p].item()
 
-                            create_gantt_chart_from_schedule(
-                                schedule=schedule,
-                                activity_to_project=act_to_proj,
-                                num_teams=test_env.N_T,
-                                instance_name=f"{pickle_name}_instance_{i}",
-                                algorithm="RL",
-                                objective_value=scores[i].item(),
-                                project_due_dates=proj_due,
-                                save_dir=gantt_dir,
-                                show=SHOW_GANTT_CHART
-                            )
+                                create_gantt_chart_from_schedule(
+                                    schedule=schedule,
+                                    activity_to_project=act_to_proj,
+                                    num_teams=test_env.N_T,
+                                    instance_name=f"{pickle_name}_instance_{i}",
+                                    algorithm="RL",
+                                    objective_value=scores[i].item(),
+                                    project_due_dates=proj_due,
+                                    save_dir=gantt_dir,
+                                    show=True
+                                )
 
-                            if i not in precedence_graphs_created:
+                            if SHOW_PRECEDENCE_GRAPH and i not in precedence_graphs_created:
                                 activity_predecessors = {}
                                 activity_mutex = {}
                                 for act_id in range(num_act):
@@ -899,7 +993,7 @@ if __name__ == "__main__":
                                     activity_to_project=act_to_proj,
                                     instance_name=f"{pickle_name}_instance_{i}",
                                     save_dir=gantt_dir,
-                                    show=SHOW_GANTT_CHART
+                                    show=True
                                 )
                                 precedence_graphs_created.add(i)
                         except Exception as e:

@@ -311,10 +311,12 @@ def solve_rcmpsp_gurobi(inst, time_limit: int):
     # --- Result Retrieval ---
     if m.SolCount > 0:
         if m.Status == GRB.OPTIMAL:
+            sol_status = "optimal"
             print(f"Optimal solution found! Objective: {m.ObjVal} Time: {m.Runtime:.2f}s")
         else:
+            sol_status = "feasible"
             print(f"Feasible solution found! Objective: {m.ObjVal} Time: {m.Runtime:.2f}s")
-        
+
         # Recover Assigned Teams
         assigned_teams = {}
         for (i, t), var in x.items():
@@ -328,12 +330,12 @@ def solve_rcmpsp_gurobi(inst, time_limit: int):
             dur_i = d[i][t] if t is not None else inst.durations[i]
             start_times[i] = C[i].X - dur_i
 
-        return m.ObjVal, start_times, assigned_teams
-    
+        return m.ObjVal, start_times, assigned_teams, sol_status
+
     elif m.Status == GRB.TIME_LIMIT:
         print("Time limit reached with no feasible solution.")
         return None
-    
+
     else:
         print("Model is infeasible or unbounded.")
         return None
@@ -481,23 +483,25 @@ def solve_rcmpsp_cp(inst, time_limit: int):
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         obj_val = solver.ObjectiveValue()
         if status == cp_model.OPTIMAL:
+            sol_status = "optimal"
             print(f"Optimal solution found! Objective: {obj_val} Time: {solver.WallTime():.2f}s")
         else:
+            sol_status = "feasible"
             print(f"Feasible solution found! Objective: {obj_val} Time: {solver.WallTime():.2f}s")
-        
+
         # Recover Start Times
         start_times = {}
         for i in range(inst.num_activities):
             start_times[i] = solver.Value(starts[i])
-            
+
         # Recover Assigned Teams
         assigned_teams = {}
         for (i, t), var in presences.items():
             if solver.Value(var) == 1:
                 assigned_teams[i] = t
-                
-        return obj_val, start_times, assigned_teams
-        
+
+        return obj_val, start_times, assigned_teams, sol_status
+
     elif status == cp_model.UNKNOWN: # Time limit reached without solution
         print("Time limit reached with no feasible solution.")
         return None

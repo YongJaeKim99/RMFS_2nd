@@ -18,6 +18,18 @@ if __name__ == "__main__":
 
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
+    
+    # Reward 방식 선택
+    REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
+                            # 'stepwise': 매 step마다 dense reward
+    # Wait / Dominance 옵션 (DANIEL action space)
+    ALLOW_WAIT_RELEASE = True   # True: release time 미래 activity도 대기 후 스케줄 허용
+    ALLOW_WAIT_MUTEX = True     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
+    DOMINANCE_RULE = True       # True: 대기 pair의 dominance 필터링
+
+    # Tardiness 추정 방식 (stepwise reward + feature에 사용)
+    TARDINESS_EST_TYPE = 'simple'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
+                                   # 'sbh': Shifting Bottleneck Heuristic 7-Phase (ATC + contention)
 
     # ------------------------------------------------------------------
     # 알고리즘별 기본 하이퍼파라미터 (논문 값 기준)
@@ -65,13 +77,11 @@ if __name__ == "__main__":
     RESUME_TRAINING = False  # True: epoch 번호도 이어받기, False: epoch는 0부터 시작 (가중치만 로드)
 
     # Device 옵션
-    #DEVICE_MODE = 'cpu'  # 'cpu', 'hybrid', 'gpu'
     DEVICE_MODE = 'gpu'  # 'cpu', 'hybrid', 'gpu'
-    #DEVICE_MODE = 'hybrid'  # 'cpu', 'hybrid', 'gpu'
     # 'cpu': 전부 CPU, 'hybrid': 모델/학습은 GPU + 환경은 CPU, 'gpu': 전부 GPU
 
     # Wandb 옵션
-    USE_WANDB = True    # ← 동작 확인용 (원래: True)
+    USE_WANDB = True
     WANDB_PROJECT = "RCMPSP"
     WANDB_RUN_NAME = None
     WANDB_RUN_ID = None
@@ -79,20 +89,6 @@ if __name__ == "__main__":
 
     # Validation 사용 여부
     USE_VALIDATION = True
-
-    # Wait / Dominance 옵션 (DANIEL action space)
-    ALLOW_WAIT_RELEASE = True   # True: release time 미래 activity도 대기 후 스케줄 허용
-    ALLOW_WAIT_MUTEX = True     # True: mutex 파트너 실행 중인 activity도 대기 후 스케줄 허용
-    DOMINANCE_RULE = True       # True: 대기 pair의 dominance 필터링
-
-    # Reward 방식 선택
-    REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
-                            # 'stepwise': 매 step마다 dense reward (DANIEL 논문 방식, tardiness 전용)
-    #REWARD_TYPE = 'sparse'  # 'sparse': episode 끝에만 reward (기본)
-
-    # Tardiness 추정 방식 (stepwise reward + feature에 사용)
-    TARDINESS_EST_TYPE = 'simple'  # 'simple': DANIEL-style forward DAG + min_pt (lower bound)
-                                   # 'sbh': Shifting Bottleneck Heuristic 7-Phase (ATC + contention)
 
     # 디버그 옵션
     DEBUG_ENV = False
@@ -149,12 +145,12 @@ if __name__ == "__main__":
     env_params = {
          'batch_size': BATCH_SIZE,
          'pomo_size': POMO_SIZE,
-         'N_P': 10,  # 프로젝트 수 (논문: n_j=10)
-         'N_A_min': 4,  # 프로젝트당 최소 activity 수 (총 ~50, 논문: n_op=50)
+         'N_P': 10,  # 프로젝트 수
+         'N_A_min': 4,  # 프로젝트당 최소 activity 수
          'N_A_max': 6,  # 프로젝트당 최대 activity 수
-         'N_T': 5,  # 팀 수 (논문: n_m=5)
-         'duration_min': 1,  # 최소 작업 시간 (논문: low=1)
-         'duration_max': 99,  # 최대 작업 시간 (논문: high=99)
+         'N_T': 5,  # 팀 수
+         'duration_min': 1,  # 최소 작업 시간
+         'duration_max': 99,  # 최대 작업 시간
          'precedence_prob': 0.3,  # 선행 관계 생성 확률
          'mutex_prob': 0.03,  # 동시 불가 생성 확률
          'max_preds': 5,   # activity당 최대 선행 작업 수 (tensor 패딩 크기)
@@ -172,28 +168,7 @@ if __name__ == "__main__":
          'reward_type': REWARD_TYPE,
          'tardiness_est_type': TARDINESS_EST_TYPE,
     }
-    '''
-    # 큰 사이즈
-    env_params = {
-        'batch_size': BATCH_SIZE,
-        'pomo_size': POMO_SIZE,
-        'N_P': 10,  # 프로젝트 수 (5 → 10)
-        'N_A_min': 10,  # 프로젝트당 최소 activity 수 (4 → 10)
-        'N_A_max': 20,  # 프로젝트당 최대 activity 수 (6 → 20)
-        'N_T': 8,  # 팀 수 (4 → 8)
-        'duration_min': 1,  # 최소 작업 시간 (2 → 1)
-        'duration_max': 10,  # 최대 작업 시간 (6 → 10)
-        'precedence_prob': 0.3,  # 선행 관계 생성 확률
-        'mutex_prob': 0.1,  # 동시 불가 생성 확률
-        'max_preds': 5,   # activity당 최대 선행 작업 수
-        'max_succs': 5,   # activity당 최대 후행 작업 수
-        'max_mutex': 10,  # activity당 최대 동시 불가 작업 수
-        'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
-        'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
-        'objective': OBJECTIVE,
-        'debug_env': DEBUG_ENV,
-    }
-    '''
+
     # 모델 파라미터 설정 (DANIEL)
     # 논문 원본 파라미터 (DANIEL, Tesla T4 기준, ~28K params)
     model_params = {
@@ -208,23 +183,6 @@ if __name__ == "__main__":
          'num_mlp_layers_critic': 3,
          'hidden_dim_critic': 64,
     }
-    # 큰 사이즈 파라미터 (~300K params)
-    '''
-    model_params = {
-        # DAN (Dual Attention Network) 파라미터
-        'fea_act_input_dim': 14,    # Activity 피처 차원 (env 출력과 일치)
-        'fea_team_input_dim': 8,    # Team 피처 차원 (env 출력과 일치)
-        'num_heads_AAB': [8, 8, 8],    # Activity Attention Block 헤드 수 (3층)
-        'num_heads_TAB': [8, 8, 8],    # Team Attention Block 헤드 수 (3층)
-        'layer_fea_output_dim': [128, 64, 32],  # DAN 레이어 출력 차원 (3층)
-        'dropout_prob': 0.0,
-        # Actor-Critic MLP 파라미터
-        'num_mlp_layers_actor': 3,
-        'hidden_dim_actor': 256,
-        'num_mlp_layers_critic': 3,
-        'hidden_dim_critic': 256,
-    }
-    '''
 
     # 트레이너 파라미터 설정
     trainer_params = {
