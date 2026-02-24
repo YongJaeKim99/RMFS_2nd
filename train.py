@@ -12,9 +12,10 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
+    ALGORITHM_TYPE = 'ppo'   # 'reinforce', 'ppo', or 'il'
     # 'reinforce': REINFORCE + POMO baseline
     # 'ppo':       PPO-Clip + GAE
+    # 'il':        Imitation Learning (Behavioral Cloning from CP-SAT optimal)
 
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
@@ -47,6 +48,18 @@ if __name__ == "__main__":
         ENTROPY_COEF        = 0.01         # 논문: entloss_coef = 0.01
         BASELINE_TYPE       = 'none'       # PPO는 value function이 baseline
         NORMALIZE_ADVANTAGE = False        # GAE 내부에서 정규화
+    elif ALGORITHM_TYPE == 'il':
+        EPOCHS                = 200        # BC epoch 수
+        BATCH_SIZE            = 1          # IL에서는 학습 데이터가 미리 수집됨 (env 생성용 placeholder)
+        POMO_SIZE             = 1
+        VALIDATION_INTERVAL   = 5
+        VALIDATION_BATCH_SIZE = 50
+        VALIDATION_POMO_SIZE  = 1
+        optimizer_params = {'optimizer': {'lr': 1e-4, 'weight_decay': 0}}
+        USE_ENTROPY_REG     = False
+        ENTROPY_COEF        = 0.0
+        BASELINE_TYPE       = 'none'
+        NORMALIZE_ADVANTAGE = False
     else:  # 'reinforce'
         EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
         BATCH_SIZE            = 16
@@ -74,6 +87,14 @@ if __name__ == "__main__":
     N_RESAMPLE         = 20         # 논문: 학습 데이터 리샘플링 주기 N_r
     PPO_ADV_NORM_TYPE  = 'per_instance'  # 'batch': 배치 전체 정규화 (기존 방식)
                                          # 'per_instance': 인스턴스별 독립 정규화 (REINFORCE-POMO 스타일)
+
+    # ------------------------------------------------------------------
+    # IL (Imitation Learning) 전용 파라미터
+    # ------------------------------------------------------------------
+    IL_DATA_PATH = 'data/il/il_labels.pickle'  # 수집된 레이블 데이터 경로
+    IL_MINIBATCH_SIZE = 256                     # 미니배치 크기
+    IL_LOSS_TYPE = 'mse'                        # 'mse': MSE(one-hot, pi) 논문 원본
+                                                # 'ce': Cross-Entropy(-log(pi[a*]))
 
     # 체크포인트 재개 옵션
     RESUME_FROM_CHECKPOINT = None  # None: 처음부터 학습, "path/to/checkpoint.pt": 체크포인트에서 이어서 학습
@@ -231,6 +252,10 @@ if __name__ == "__main__":
         'n_resample': N_RESAMPLE,
         'ppo_adv_norm_type': PPO_ADV_NORM_TYPE,
         'reward_type': REWARD_TYPE,
+        # IL 전용 파라미터 (REINFORCE/PPO 시에도 전달되지만 무시됨)
+        'il_data_path': IL_DATA_PATH,
+        'il_minibatch_size': IL_MINIBATCH_SIZE,
+        'il_loss_type': IL_LOSS_TYPE,
     }
 
     # 트레이너 생성
@@ -249,6 +274,10 @@ if __name__ == "__main__":
         print(f"  └─ gamma={PPO_GAMMA}, vloss_coef={PPO_VLOSS_COEF}, ploss_coef={PPO_PLOSS_COEF}")
         print(f"  └─ n_resample={N_RESAMPLE}, ppo_minibatch_size={PPO_MINIBATCH_SIZE}, tau={PPO_TAU}")
         print(f"  └─ adv_norm_type={PPO_ADV_NORM_TYPE}")
+    elif ALGORITHM_TYPE == 'il':
+        print(f"  └─ data_path={IL_DATA_PATH}")
+        print(f"  └─ minibatch_size={IL_MINIBATCH_SIZE}")
+        print(f"  └─ loss_type={IL_LOSS_TYPE}")
     print(f"Model: DANIEL")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")

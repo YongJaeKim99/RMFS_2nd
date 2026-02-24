@@ -65,6 +65,11 @@ if __name__ == "__main__":
     # CP (CP-SAT) 설정
     CP_TIME_LIMIT = 30         # 인스턴스당 시간 제한 (초)
 
+    # IL (Imitation Learning) 레이블 데이터 수집 설정
+    COLLECT_IL = False                              # True: CP 기반 IL 레이블 데이터 수집 모드
+    IL_CP_TIME_LIMIT = 60                           # 레이블 수집용 CP 시간 제한 (넉넉하게)
+    IL_SAVE_PATH = 'data/il/il_labels.pickle'       # 저장 경로
+
     # 간트차트 설정
     SHOW_GANTT_CHART = True
     SHOW_PRECEDENCE_GRAPH = True
@@ -469,6 +474,9 @@ if __name__ == "__main__":
     # =================================================================
     algorithm_summaries = {}
     saved_files = []
+
+    # IL 레이블 데이터 누적용
+    il_all_pairs = []
 
     for pickle_path in pickle_files:
         pickle_name = pickle_path.stem  # e.g., "test_batch"
@@ -884,6 +892,58 @@ if __name__ == "__main__":
                         saved_files.append(output_path)
 
         # =============================================
+        # IL 레이블 데이터 수집 (CP-SAT → replay → (state, action) 쌍)
+        # =============================================
+        if COLLECT_IL:
+            if OBJECTIVE != 'tardiness':
+                print(f"\n  ⚠️ IL 레이블 수집은 현재 tardiness만 지원합니다. (현재: {OBJECTIVE}) → 스킵")
+            else:
+                from il_utils import extract_single_instance, replay_cp_solution
+                from data_generator import convert_problem_to_mip_format
+                from samsung_MIP import solve_rcmpsp_cp
+
+                print(f"\n  --- IL Label Collection ({pickle_name}) ---")
+                il_success_count = 0
+
+                for i in range(inst_start, inst_end):
+                    print(f"\n   📋 IL Instance {i}/{inst_end-1}")
+                    try:
+                        inst = convert_problem_to_mip_format(problem, i)
+                        il_start_time = time.time()
+                        result = solve_rcmpsp_cp(inst, IL_CP_TIME_LIMIT)
+                        il_runtime = time.time() - il_start_time
+
+                        if result is None:
+                            print(f"     ⚠️ [Instance {i}] CP 해 없음 → 스킵 (Runtime: {il_runtime:.2f}s)")
+                            continue
+
+                        obj_val, start_times_sol, assigned_teams_sol, status = result
+                        print(f"     [Instance {i}] CP obj: {obj_val:.4f}, status: {status}, runtime: {il_runtime:.2f}s")
+
+                        # 단일 인스턴스 추출
+                        problem_single, env_params_single = extract_single_instance(problem, env_params, i)
+
+                        # 환경에서 replay → (state, action) 수집
+                        pairs = replay_cp_solution(
+                            problem_single, env_params_single,
+                            start_times_sol, assigned_teams_sol
+                        )
+
+                        il_all_pairs.extend(pairs)
+                        il_success_count += 1
+                        print(f"     ✅ [Instance {i}] {len(pairs)} pairs collected")
+
+                    except Exception as e:
+                        print(f"     ❌ [Instance {i}] 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+                print(f"\n  IL 수집 결과 ({pickle_name}): "
+                      f"{il_success_count}/{inst_end-inst_start} instances, "
+                      f"{len(il_all_pairs)} total pairs (누적)")
+
+        # =============================================
         # RL 실행 (배치 추론)
         # =============================================
         for ckpt_path in all_ckpts:
@@ -1057,6 +1117,26 @@ if __name__ == "__main__":
                 output_path = save_rl_results_to_excel(rl_results, checkpoint_name, pickle_name)
                 if output_path:
                     saved_files.append(output_path)
+
+    # =================================================================
+    # IL 레이블 데이터 저장 (모든 pickle 파일에서 누적된 pairs)
+    # =================================================================
+    if COLLECT_IL and il_all_pairs:
+        il_save_dir = os.path.dirname(IL_SAVE_PATH)
+        if il_save_dir:
+            os.makedirs(il_save_dir, exist_ok=True)
+        with open(IL_SAVE_PATH, 'wb') as f:
+            pickle.dump({
+                'pairs': il_all_pairs,
+                'env_params': env_params,
+            }, f)
+        print(f"\n{'='*60}")
+        print(f"IL Label Data Saved")
+        print(f"{'='*60}")
+        print(f"  총 (state, action) 쌍: {len(il_all_pairs)}")
+        print(f"  저장 경로: {IL_SAVE_PATH}")
+    elif COLLECT_IL:
+        print(f"\n⚠️ IL 레이블 데이터가 수집되지 않았습니다. (CP 해를 찾은 인스턴스 없음)")
 
     # =================================================================
     # 전체 결과 요약

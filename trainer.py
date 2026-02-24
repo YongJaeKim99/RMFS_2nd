@@ -71,7 +71,8 @@ class Scheduling_Trainer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             objective = env_params.get('objective', 'tardiness')
             model_type = 'DANIEL'
-            alg_label = 'PPO' if trainer_params.get('algorithm_type', 'reinforce') == 'ppo' else 'REINFORCE'
+            alg_type = trainer_params.get('algorithm_type', 'reinforce')
+            alg_label = {'ppo': 'PPO', 'il': 'IL', 'reinforce': 'REINFORCE'}.get(alg_type, 'REINFORCE')
             self.checkpoint_dir = f"./checkpoints/{timestamp}_{objective}_{model_type}_{alg_label}"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
             print(f"✅ 체크포인트 저장 폴더 생성: {self.checkpoint_dir}")
@@ -154,6 +155,20 @@ class Scheduling_Trainer:
             print(f"✅ PPO 초기화 완료 (eps_clip={self.eps_clip}, k_epochs={self.k_epochs}, "
                   f"gae_lambda={self.gae_lambda}, n_resample={self.n_resample})")
 
+        # IL (Imitation Learning) 전용 초기화
+        elif self.algorithm_type == 'il':
+            from il_utils import ILDataset
+            self.il_loss_type = trainer_params.get('il_loss_type', 'mse')
+            self.il_minibatch_size = trainer_params.get('il_minibatch_size', 256)
+            il_data_path = trainer_params.get('il_data_path', 'data/il/il_labels.pickle')
+            self.il_dataset = ILDataset(il_data_path)
+            self.il_dataloader = self.il_dataset.get_dataloader(
+                batch_size=self.il_minibatch_size, shuffle=True
+            )
+            print(f"✅ IL 초기화 완료 (loss_type={self.il_loss_type}, "
+                  f"minibatch_size={self.il_minibatch_size}, "
+                  f"samples={len(self.il_dataset)})")
+
         # Validation 데이터셋 미리 생성 (고정된 validation set)
         self.validation_problem = None
         if mode == 'train' and trainer_params.get('use_validation', False):
@@ -222,6 +237,13 @@ class Scheduling_Trainer:
                 "fea_team_input_dim": self.model_params.get('fea_team_input_dim'),
                 "layer_fea_output_dim": self.model_params.get('layer_fea_output_dim'),
             })
+            # IL 전용 파라미터 추가
+            if self.algorithm_type == 'il':
+                config.update({
+                    "il_loss_type": self.trainer_params.get('il_loss_type', 'mse'),
+                    "il_minibatch_size": self.trainer_params.get('il_minibatch_size', 256),
+                    "il_data_path": self.trainer_params.get('il_data_path', ''),
+                })
             
             # Wandb init 파라미터 구성
             wandb_init_kwargs = {
@@ -325,6 +347,9 @@ class Scheduling_Trainer:
                 if ppo_problem is None or (epoch - start_epoch) % self.n_resample == 0:
                     ppo_problem = generate_scheduling_data_batch(self.env_params)
                 train_loss_avg, train_reward_avg = self._train_ppo_one_batch(ppo_problem)
+            elif self.algorithm_type == 'il':
+                train_loss_avg = self._train_il_one_epoch()
+                train_reward_avg = 0.0  # IL에는 reward 개념 없음
             else:
                 train_loss_avg, train_reward_avg = self._train_one_batch()
             train_obj_avg = -train_reward_avg  # Reward는 -objective이므로 부호 반전
@@ -1222,6 +1247,72 @@ class Scheduling_Trainer:
         print(f"   인스턴스 수: {validation_batch_size}, POMO: {validation_pomo_size}")
         print(f"   ℹ️  다음 학습부터는 이 파일을 재사용합니다.")
     
+    def _train_il_one_epoch(self):
+        """
+        Imitation Learning (Behavioral Cloning) 1 epoch 학습
+
+        Algorithm 1 (논문):
+        - 수집된 (state, optimal_action) 쌍에서 미니배치 샘플링
+        - Loss = MSE(π*(s), πθ(s)) 또는 CE(-log πθ(a*|s))
+
+        Returns:
+            avg_loss: 평균 loss
+        """
+        self.model.train()
+        total_loss = 0.0
+        num_batches = 0
+
+        for batched_state, actions in self.il_dataloader:
+            # State 텐서들을 device로 이동
+            fea_act = batched_state['fea_act'].to(self.device)
+            act_mask = batched_state['act_mask'].to(self.device)
+            candidate = batched_state['candidate'].to(self.device)
+            fea_team = batched_state['fea_team'].to(self.device)
+            team_mask = batched_state['team_mask'].to(self.device)
+            comp_idx = batched_state['comp_idx'].to(self.device)
+            dynamic_pair_mask = batched_state['dynamic_pair_mask'].to(self.device)
+            fea_pairs = batched_state['fea_pairs'].to(self.device)
+            pred_idx = batched_state['pred_idx'].to(self.device)
+            succ_idx = batched_state['succ_idx'].to(self.device)
+            mutex_idx = batched_state['mutex_idx'].to(self.device) if batched_state['mutex_idx'] is not None else None
+
+            optimal_actions = actions.to(self.device)
+
+            # Model forward: pi (B, N*T), v (B, 1)
+            pi, v = self.model(
+                fea_act, act_mask, candidate, fea_team,
+                team_mask, comp_idx, dynamic_pair_mask, fea_pairs,
+                pred_idx, succ_idx, mutex_idx
+            )
+
+            # Loss 계산
+            if self.il_loss_type == 'mse':
+                # MSE(π*(s), πθ(s)) — 논문 Eq.10
+                num_classes = pi.shape[1]  # N * T
+                one_hot_target = F.one_hot(optimal_actions, num_classes=num_classes).float()
+                loss = F.mse_loss(pi, one_hot_target)
+            else:
+                # Cross-Entropy: -log(πθ(a*|s))
+                # pi는 softmax 후 확률이므로 nll_loss 사용
+                log_pi = torch.log(torch.clamp(pi, min=1e-8))
+                loss = F.nll_loss(log_pi, optimal_actions)
+
+            # Backward & optimize
+            self.optimizer.zero_grad()
+            loss.backward()
+
+            grad_clip_norm = self.trainer_params.get('grad_clip_norm', None)
+            if grad_clip_norm is not None:
+                clip_grad_norm_(self.model.parameters(), grad_clip_norm)
+
+            self.optimizer.step()
+
+            total_loss += loss.item()
+            num_batches += 1
+
+        avg_loss = total_loss / max(num_batches, 1)
+        return avg_loss
+
     def _eval_validation(self, validation_batch_size=10, validation_pomo_size=1):
         """
         Validation 평가 함수: 배치 데이터로 모델 성능 평가 (Greedy policy)
