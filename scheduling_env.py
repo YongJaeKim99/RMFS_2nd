@@ -359,9 +359,9 @@ class SchedulingEnv:
         feasible = basic & pred_ok & mutex_ok
 
         # Wait 옵션: release/mutex 제약을 완화하여 기다려서 스케줄 가능한 pair도 허용
+        # team_ok는 항상 요구: 팀이 바쁘면 move_next_state가 시간을 진행시킴
         if self.allow_wait_release or self.allow_wait_mutex:
-            # wait 가능한 pair: basic 조건에서 released와 team_ok 제거 + pred_ok
-            wait_base = valid & unstarted & pred_ok
+            wait_base = valid & unstarted & pred_ok & team_ok
             if not self.allow_wait_release:
                 wait_base = wait_base & released
             if not self.allow_wait_mutex:
@@ -1164,8 +1164,8 @@ class SchedulingEnv:
         Action space: (activity, team) 쌍. Candidate = 전체 N개 activity (마스킹으로 제어)
 
         RCMPSP에 맞게 적응된 피처:
-            fea_act: (B, N, 12) - activity feature vectors
-            act_mask: (B, N, 3) - predecessor/successor attention mask
+            fea_act: (B, N, 14) - activity feature vectors
+            act_mask: (B, N, 3 or 4) - predecessor/successor(/mutex) attention mask
             fea_team: (B, T, 8) - team feature vectors
             team_mask: (B, T, T) - team attention mask
             comp_idx: (B, T, T, N) - competition index
@@ -1411,13 +1411,9 @@ class SchedulingEnv:
             | ~self.activity_eligible_teams            # 팀 eligibility 없음
         )  # (B, N, T)
 
-        # Wait 옵션이 없을 때만 팀 비가용 마스킹
-        # Wait 옵션 사용 시 _update_available_actions의 wait_base는 team_ok를 요구하지 않으므로
-        # (바쁜 팀에도 미래 시작 시간으로 assign 가능), dynamic_pair_mask도 이에 맞춰 팀 마스크 제거.
-        # 이를 제거하지 않으면: 모든 ready activity의 eligible 팀이 전부 바쁠 때
-        # 모델이 유효 action이 없어 이미 시작된 활동을 재선택하는 무한루프 발생.
-        if not (self.allow_wait_release or self.allow_wait_mutex):
-            dynamic_pair_mask = dynamic_pair_mask | ~team_avail_now.unsqueeze(1)
+        # 팀 비가용 마스킹 (항상 적용): 바쁜 팀은 배정 불가.
+        # move_next_state가 팀이 풀릴 때까지 시간을 진행시킴.
+        dynamic_pair_mask = dynamic_pair_mask | ~team_avail_now.unsqueeze(1)
 
         # Release/mutex 조건 on/off
         if not self.allow_wait_release:

@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'ppo'   # 'reinforce', 'ppo', or 'il'
+    ALGORITHM_TYPE = 'il'   # 'reinforce', 'ppo', or 'il'
     # 'reinforce': REINFORCE + POMO baseline
     # 'ppo':       PPO-Clip + GAE
     # 'il':        Imitation Learning (Behavioral Cloning from CP-SAT optimal)

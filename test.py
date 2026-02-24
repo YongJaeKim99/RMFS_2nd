@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["RL", "GA", "CP"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
+    test_algorithms = ["CP"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -66,13 +66,13 @@ if __name__ == "__main__":
     CP_TIME_LIMIT = 30         # 인스턴스당 시간 제한 (초)
 
     # IL (Imitation Learning) 레이블 데이터 수집 설정
-    COLLECT_IL = False                              # True: CP 기반 IL 레이블 데이터 수집 모드
-    IL_CP_TIME_LIMIT = 60                           # 레이블 수집용 CP 시간 제한 (넉넉하게)
+    COLLECT_IL = True                              # True: CP 기반 IL 레이블 데이터 수집 모드
+    IL_CP_TIME_LIMIT = 30                           # 레이블 수집용 CP 시간 제한 (넉넉하게)
     IL_SAVE_PATH = 'data/il/il_labels.pickle'       # 저장 경로
 
     # 간트차트 설정
-    SHOW_GANTT_CHART = True
-    SHOW_PRECEDENCE_GRAPH = True
+    SHOW_GANTT_CHART = False
+    SHOW_PRECEDENCE_GRAPH = False
 
     # =================================================================
     # 🎯 목적함수 선택
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     # 인스턴스 범위 설정
     # -----------------------------
     INSTANCE_START = 0  # 시작 인스턴스 번호 (None이면 0부터)
-    INSTANCE_END = 1    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
+    INSTANCE_END = 50    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
 
     # -----------------------------
     # 기타 설정
