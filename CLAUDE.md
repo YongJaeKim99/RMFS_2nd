@@ -110,7 +110,7 @@ train.py (파라미터 설정)
 
 ### 상태 표현
 
-- `EnvState` 데이터클래스: 10개 텐서 (`fea_act [B,N,12]`, `fea_team [B,T,8]`, `candidate [B,N]`, `comp_idx [B,T,T,N]`, `dynamic_pair_mask [B,N,T]`, `fea_pairs [B,N,T,8]`, `pred_idx`, `succ_idx`, ...)
+- `EnvState` 데이터클래스: 10개 텐서 (`fea_act [B,N,14]`, `fea_team [B,T,8]`, `candidate [B,N]`, `comp_idx [B,T,T,N]`, `dynamic_pair_mask [B,N,T]`, `fea_pairs [B,N,T,8]`, `pred_idx`, `succ_idx`, ...)
 - Action space: `N × T` (현재 후보 activity × 팀)
 - flat action index → `act_idx = action // N_T`, `team_idx = action % N_T`
 
@@ -149,7 +149,7 @@ PPO 체크포인트는 `model_old_state_dict`도 포함합니다.
 
 - **`FJSP-DRL-main/`**: 원본 FJSP 프로젝트 참고용 폴더. 이 프로젝트에서는 `model/` 폴더에 이식된 버전만 사용합니다.
 - **`model/main_model.py`의 파라미터 이름**: 원본 FJSP의 `fea_j_input_dim`, `num_heads_OAB` 등을 사용. `train.py`에서는 RCMPSP 이름(`fea_act_input_dim`, `num_heads_AAB`)을 사용하며, `trainer.py`가 `SimpleNamespace`로 매핑합니다.
-- **`fea_act_input_dim=12`**: `scheduling_env.py`의 `_get_state_daniel()`이 생성하는 차원과 항상 일치해야 합니다. 피처 수를 바꾸면 두 곳 모두 수정해야 합니다.
+- **`fea_act_input_dim=14`**: `scheduling_env.py`의 `_get_state_daniel()`이 생성하는 차원과 항상 일치해야 합니다. 피처 수를 바꾸면 두 곳 모두 수정해야 합니다.
 - **DANIEL의 Critic**: 현재 REINFORCE 손실에는 포함되지 않습니다. PPO에서는 `vloss_coef * F.mse_loss(v, v_target)`로 학습됩니다.
 - **`samsung_MIP.py`**: Gurobi 라이센스가 필요합니다. 라이센스가 없으면 OR-Tools CP-SAT 경로를 사용합니다.
 - **Wait / Dominance 옵션** (`ALLOW_WAIT_RELEASE`, `ALLOW_WAIT_MUTEX`, `DOMINANCE_RULE`): action space를 확장/축소하는 실험적 옵션입니다. 기본값은 모두 `False`입니다.

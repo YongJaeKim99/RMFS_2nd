@@ -1,0 +1,31 @@
+{
+  "os": "Windows-11-10.0.26100-SP0",
+  "python": "CPython 3.12.9",
+  "startedAt": "2026-02-24T00:51:06.691801Z",
+  "program": "c:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code\\train.py",
+  "codePath": "train.py",
+  "git": {
+    "remote": "https://github.com/YongJaeKim99/RCMPSP_1st.git",
+    "commit": "6913a6ffd627692f46dc84f5e2dd74aff0b9556b"
+  },
+  "email": "yongjae9@kaist.ac.kr",
+  "root": "C:\\Users\\YongJae\\Desktop\\Project\\Samsung_DS\\Code",
+  "host": "DESKTOP-J3NHCCN",
+  "executable": "C:\\Users\\YongJae\\anaconda3\\envs\\RSS_1st\\python.exe",
+  "codePathLocal": "train.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 20,
+  "disk": {
+    "/": {
+      "total": "499076034560",
+      "used": "374874857472"
+    }
+  },
+  "memory": {
+    "total": "68472336384"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 20
+  }
+}

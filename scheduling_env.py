@@ -17,7 +17,7 @@ from data_generator import generate_scheduling_data_batch
 @dataclass
 class EnvState:
     """DANIEL 모델용 상태 정의 (RCMPSP 환경). Action space: (activity, team) 쌍."""
-    fea_act_tensor: torch.Tensor = None       # (B, N, 12) activity features
+    fea_act_tensor: torch.Tensor = None       # (B, N, 14) activity features
     act_mask_tensor: torch.Tensor = None       # (B, N, 3)  attention mask
     fea_team_tensor: torch.Tensor = None       # (B, T, 8)  team features
     team_mask_tensor: torch.Tensor = None      # (B, T, T)  team attention mask
@@ -1247,7 +1247,7 @@ class SchedulingEnv:
         proj_tot_work = (self.activity_duration.unsqueeze(1) * proj_valid.float()).sum(dim=2).clamp(min=1)  # (B, P)
         
         # ========================================
-        # 3. fea_act (B, N, 12)
+        # 3. fea_act (B, N, 14)
         # ========================================
         # act_proj_safe: 위 schedulable 계산에서 이미 정의됨
 

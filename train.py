@@ -12,15 +12,15 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'ppo'   # 'reinforce' or 'ppo'
-    # 'reinforce': REINFORCE + POMO baseline (GAT / DANIEL 모두 가능)
-    # 'ppo':       PPO-Clip + GAE (DANIEL 전용, 논문 알고리즘)
+    ALGORITHM_TYPE = 'reinforce'   # 'reinforce' or 'ppo'
+    # 'reinforce': REINFORCE + POMO baseline
+    # 'ppo':       PPO-Clip + GAE
 
     # 목적함수 선택
     OBJECTIVE = 'tardiness'  # 'tardiness' or 'makespan'
     
     # Reward 방식 선택
-    REWARD_TYPE = 'stepwise'  # 'sparse': episode 끝에만 reward (기본)
+    REWARD_TYPE = 'sparse'  # 'sparse': episode 끝에만 reward (기본)
                             # 'stepwise': 매 step마다 dense reward
     # Wait / Dominance 옵션 (DANIEL action space)
     ALLOW_WAIT_RELEASE = True   # True: release time 미래 activity도 대기 후 스케줄 허용
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
         VALIDATION_BATCH_SIZE = 50
         VALIDATION_POMO_SIZE  = 1
-        optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 1e-6}}  # 논문: 3×10⁻⁴
+        optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = True
         ENTROPY_COEF        = 0.01         # 논문: entloss_coef = 0.01
         BASELINE_TYPE       = 'none'       # PPO는 value function이 baseline
@@ -53,11 +53,11 @@ if __name__ == "__main__":
         VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
         VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
-        optimizer_params = {'optimizer': {'lr': 3e-5, 'weight_decay': 1e-6}}
+        optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = False
         ENTROPY_COEF        = 0.01
         BASELINE_TYPE       = 'pomo'
-        NORMALIZE_ADVANTAGE = False
+        NORMALIZE_ADVANTAGE = True
 
     # ------------------------------------------------------------------
     # PPO 전용 파라미터 (논문 값)
