@@ -149,6 +149,7 @@ class Scheduling_Trainer:
             self.tau                = trainer_params.get('tau', 0.0)
             self.ppo_minibatch_size = trainer_params.get('ppo_minibatch_size', 32)
             self.n_resample         = trainer_params.get('n_resample', 20)
+            self.ppo_adv_norm_type  = trainer_params.get('ppo_adv_norm_type', 'batch')
             self.ppo_memory         = PPOMemory(self.gamma, self.gae_lambda)
             print(f"✅ PPO 초기화 완료 (eps_clip={self.eps_clip}, k_epochs={self.k_epochs}, "
                   f"gae_lambda={self.gae_lambda}, n_resample={self.n_resample})")
@@ -213,6 +214,7 @@ class Scheduling_Trainer:
                 "normalize_advantage": normalize_advantage,
                 "entropy_coef": self.trainer_params.get('entropy_coef', 0.0),
                 "reward_type": self.reward_type,
+                "ppo_adv_norm_type": self.trainer_params.get('ppo_adv_norm_type', 'batch'),
             }
             # DANIEL 모델 파라미터 추가
             config.update({
@@ -607,8 +609,13 @@ class Scheduling_Trainer:
         t_advantage = t_advantage.to(self.device)
         v_target    = v_target.to(self.device)
 
-        # 논문: Advantage batch normalization (학습 안정화)
-        t_advantage = (t_advantage - t_advantage.mean()) / (t_advantage.std() + 1e-8)
+        # Advantage normalization
+        if self.ppo_adv_norm_type == 'per_instance':
+            # 인스턴스별 독립 정규화 (GAE 내부에서 이미 per-instance 정규화 완료 → 추가 batch 정규화 스킵)
+            pass
+        else:
+            # 기존 방식: 배치 전체 정규화 (학습 안정화)
+            t_advantage = (t_advantage - t_advantage.mean()) / (t_advantage.std() + 1e-8)
 
         full_batch_size = t_data[-1].shape[0]  # B*P*T
         num_mini = math.ceil(full_batch_size / self.ppo_minibatch_size)

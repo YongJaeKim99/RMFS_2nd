@@ -72,6 +72,8 @@ if __name__ == "__main__":
     PPO_TAU            = 0.0        # 0.0 = hard copy (standard PPO), >0 = soft update
     PPO_MINIBATCH_SIZE = 4096       # 논문: 1024 → GPU 활용 위해 확장
     N_RESAMPLE         = 20         # 논문: 학습 데이터 리샘플링 주기 N_r
+    PPO_ADV_NORM_TYPE  = 'per_instance'  # 'batch': 배치 전체 정규화 (기존 방식)
+                                         # 'per_instance': 인스턴스별 독립 정규화 (REINFORCE-POMO 스타일)
 
     # 체크포인트 재개 옵션
     RESUME_FROM_CHECKPOINT = None  # None: 처음부터 학습, "path/to/checkpoint.pt": 체크포인트에서 이어서 학습
@@ -227,6 +229,7 @@ if __name__ == "__main__":
         'tau': PPO_TAU,
         'ppo_minibatch_size': PPO_MINIBATCH_SIZE,
         'n_resample': N_RESAMPLE,
+        'ppo_adv_norm_type': PPO_ADV_NORM_TYPE,
         'reward_type': REWARD_TYPE,
     }
 
@@ -245,6 +248,7 @@ if __name__ == "__main__":
         print(f"  └─ eps_clip={PPO_EPS_CLIP}, k_epochs={PPO_K_EPOCHS}, gae_lambda={PPO_GAE_LAMBDA}")
         print(f"  └─ gamma={PPO_GAMMA}, vloss_coef={PPO_VLOSS_COEF}, ploss_coef={PPO_PLOSS_COEF}")
         print(f"  └─ n_resample={N_RESAMPLE}, ppo_minibatch_size={PPO_MINIBATCH_SIZE}, tau={PPO_TAU}")
+        print(f"  └─ adv_norm_type={PPO_ADV_NORM_TYPE}")
     print(f"Model: DANIEL")
     print(f"Objective: {OBJECTIVE}")
     print(f"Epochs: {EPOCHS}")
