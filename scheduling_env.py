@@ -145,30 +145,49 @@ class SchedulingEnv:
         self.activity_predecessors = self.problem['activity_predecessors'].to(self.device)  # (batch_size, max_N_A, max_preds)
         self.activity_successors = self.problem['activity_successors'].to(self.device)   # (batch_size, max_N_A, max_succs)
         self.activity_mutex = self.problem['activity_mutex'].to(self.device)  # (batch_size, max_N_A, max_mutex)
-        
+
+        # ========================================
+        # 인스턴스별 시간 정규화 (max duration으로 나눔)
+        # → reward/value 스케일 축소, 인스턴스 간 균형 학습
+        # ========================================
+        # 패딩 제외한 유효 activity의 max duration (인스턴스별)
+        act_indices_tmp = torch.arange(self.max_N_A, device=self.device).unsqueeze(0)
+        valid_mask_tmp = act_indices_tmp < self.num_activities.unsqueeze(1)  # (B, max_N_A)
+        masked_dur = self.activity_duration.clone()
+        masked_dur[~valid_mask_tmp] = 0.0
+        self.time_scale = masked_dur.max(dim=1, keepdim=True).values.clamp(min=1.0)  # (B, 1)
+
+        # 시간 스케일 정규화: duration, team_duration
+        self.activity_duration = self.activity_duration / self.time_scale
+        self.activity_team_duration = self.activity_team_duration / self.time_scale.unsqueeze(-1)  # (B,1,1)
+
         # Dynamic (device에서 생성)
         self.activity_started = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool, device=self.device)  # 시작 여부
         self.activity_ended = torch.zeros(self.batch_size, self.max_N_A, dtype=torch.bool, device=self.device)  # 종료 여부
         self.activity_start_time = torch.full((self.batch_size, self.max_N_A), -1.0, device=self.device)  # 시작 시간 (절대 시간)
         self.activity_end_time = torch.full((self.batch_size, self.max_N_A), -1.0, device=self.device)  # 종료 시간 (절대 시간)
-        self.activity_remaining_time = self.activity_duration.clone()  # 남은 시간: 초기값 = duration
+        self.activity_remaining_time = self.activity_duration.clone()  # 남은 시간: 초기값 = duration (정규화된 값)
         self.activity_assigned_team = torch.full((self.batch_size, self.max_N_A), -1, dtype=torch.long, device=self.device)  # 할당된 팀
-        
+
         # 패딩된 activity들은 started와 ended를 True로 설정, remaining_time은 0으로 (벡터 연산)
         activity_indices = torch.arange(self.max_N_A, device=self.device).unsqueeze(0)  # (1, max_N_A)
         num_activities_expanded = self.num_activities.unsqueeze(1)  # (batch_size, 1)
         padding_mask = activity_indices >= num_activities_expanded  # (batch_size, max_N_A)
-        
+
         self.activity_started[padding_mask] = True
         self.activity_ended[padding_mask] = True
         self.activity_remaining_time[padding_mask] = 0.0
-        
+
         # ========================================
         # Project 상태 (Static + Dynamic)
         # ========================================
         # Static (device로 이동)
         self.project_release_time = self.problem['project_release_time'].to(self.device)  # (batch_size, N_P)
         self.project_due_date = self.problem['project_due_date'].to(self.device)  # (batch_size, N_P)
+
+        # 시간 스케일 정규화: release_time, due_date
+        self.project_release_time = self.project_release_time / self.time_scale  # (B, N_P)
+        self.project_due_date = self.project_due_date / self.time_scale  # (B, N_P)
         
         # Dynamic (device에서 생성)
         # project_completion_time은 _get_obj()에서 필요할 때 계산 (중복 저장 안 함)
@@ -1133,20 +1152,24 @@ class SchedulingEnv:
         )
         
         if self.objective == 'tardiness':
-            # Total tardiness
+            # Total tardiness (정규화된 스케일)
             obj = torch.clamp(
                 project_completion_time - self.project_due_date,
                 min=0.0
             ).sum(dim=1)  # (batch_size,)
-        
+
         elif self.objective == 'makespan':
-            # Makespan
+            # Makespan (정규화된 스케일)
             obj = project_completion_time.max(dim=1)[0]  # (batch_size,)
-        
+
         else:
             obj = torch.zeros(self.batch_size, device=self.device)
-        
+
         return obj
+
+    def _get_obj_original_scale(self):
+        """_get_obj()의 원본 스케일 버전 (로깅/비교용). time_scale을 곱해 복원."""
+        return self._get_obj() * self.time_scale.squeeze(1)
     
     def _get_state(self):
         """

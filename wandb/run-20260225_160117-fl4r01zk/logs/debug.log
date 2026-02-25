@@ -1,0 +1,51 @@
+2026-02-25 16:01:17,506 INFO    MainThread:43576 [wandb_setup.py:_flush():81] Current SDK version is 0.21.3
+2026-02-25 16:01:17,506 INFO    MainThread:43576 [wandb_setup.py:_flush():81] Configure stats pid to 43576
+2026-02-25 16:01:17,506 INFO    MainThread:43576 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\.config\wandb\settings
+2026-02-25 16:01:17,506 INFO    MainThread:43576 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\settings
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_init.py:setup_run_log_directory():686] Logging user logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260225_160117-fl4r01zk\logs\debug.log
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_init.py:setup_run_log_directory():687] Logging internal logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260225_160117-fl4r01zk\logs\debug-internal.log
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_init.py:init():813] calling init triggers
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_init.py:init():818] wandb.init called with sweep_config: {}
+config: {'objective': 'tardiness', 'algorithm': 'IL', 'model_type': 'daniel', 'N_P': 10, 'N_A_min': 4, 'N_A_max': 6, 'N_T': 5, 'batch_size': 1, 'pomo_size': 1, 'epochs': 200, 'learning_rate': 0.0001, 'normalize_advantage': False, 'entropy_coef': 0.0, 'reward_type': 'stepwise', 'ppo_adv_norm_type': 'per_instance', 'fea_act_input_dim': 14, 'fea_team_input_dim': 8, 'layer_fea_output_dim': [32, 8], 'il_loss_type': 'mse', 'il_minibatch_size': 256, 'il_data_path': 'data/il/il_labels.pickle', '_wandb': {}}
+2026-02-25 16:01:17,507 INFO    MainThread:43576 [wandb_init.py:init():854] starting backend
+2026-02-25 16:01:19,778 INFO    MainThread:43576 [wandb_init.py:init():857] sending inform_init request
+2026-02-25 16:01:19,814 INFO    MainThread:43576 [wandb_init.py:init():865] backend started and connected
+2026-02-25 16:01:19,815 INFO    MainThread:43576 [wandb_init.py:init():936] updated telemetry
+2026-02-25 16:01:19,846 INFO    MainThread:43576 [wandb_init.py:init():960] communicating run to backend with 90.0 second timeout
+2026-02-25 16:01:20,660 WARNING MainThread:43576 [wandb_init.py:init():1571] [no run ID] interrupted
+Traceback (most recent call last):
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\wandb_init.py", line 1562, in init
+    run = wi.init(run_settings, run_config, run_printer)
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\wandb_init.py", line 979, in init
+    result = wait_with_progress(
+        run_init_handle,
+        timeout=timeout,
+        display_progress=display_init_message,
+    )
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\mailbox\wait_with_progress.py", line 23, in wait_with_progress
+    return wait_all_with_progress(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        [handle],
+        ^^^^^^^^^
+        timeout=timeout,
+        ^^^^^^^^^^^^^^^^
+        display_progress=display_progress,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )[0]
+    ^
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\mailbox\wait_with_progress.py", line 77, in wait_all_with_progress
+    return asyncer.run(progress_loop_with_timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\lib\asyncio_manager.py", line 136, in run
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\concurrent\futures\_base.py", line 451, in result
+    self._condition.wait(timeout)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\threading.py", line 359, in wait
+    waiter.acquire()
+    ~~~~~~~~~~~~~~^^
+KeyboardInterrupt
+2026-02-25 16:01:20,665 INFO    wandb-AsyncioManager-main:43576 [service_client.py:_forward_responses():84] Reached EOF.
+2026-02-25 16:01:20,665 INFO    wandb-AsyncioManager-main:43576 [mailbox.py:close():137] Closing mailbox, abandoning 0 handles.

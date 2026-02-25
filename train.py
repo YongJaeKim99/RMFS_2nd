@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # 알고리즘 선택 (가장 중요한 설정)
     # ------------------------------------------------------------------
-    ALGORITHM_TYPE = 'il'   # 'reinforce', 'ppo', or 'il'
+    ALGORITHM_TYPE = 'ppo'   # 'reinforce', 'ppo', or 'il'
     # 'reinforce': REINFORCE + POMO baseline
     # 'ppo':       PPO-Clip + GAE
     # 'il':        Imitation Learning (Behavioral Cloning from CP-SAT optimal)
@@ -38,10 +38,10 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS                = 1000       # 논문: max_updates = 1,000
-        BATCH_SIZE            = 128       # 논문: num_envs = 20 → GPU 활용 위해 확장
+        BATCH_SIZE            = 256       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
-        VALIDATION_BATCH_SIZE = 50
+        VALIDATION_BATCH_SIZE = 100
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = True
@@ -49,11 +49,11 @@ if __name__ == "__main__":
         BASELINE_TYPE       = 'none'       # PPO는 value function이 baseline
         NORMALIZE_ADVANTAGE = False        # GAE 내부에서 정규화
     elif ALGORITHM_TYPE == 'il':
-        EPOCHS                = 200        # BC epoch 수
+        EPOCHS                = 1000        # BC epoch 수
         BATCH_SIZE            = 1          # IL에서는 학습 데이터가 미리 수집됨 (env 생성용 placeholder)
         POMO_SIZE             = 1
         VALIDATION_INTERVAL   = 5
-        VALIDATION_BATCH_SIZE = 50
+        VALIDATION_BATCH_SIZE = 100
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 1e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = False
@@ -63,12 +63,12 @@ if __name__ == "__main__":
     else:  # 'reinforce'
         EPOCHS                = 1000       # ← 동작 확인용 (원래: 200)
         BATCH_SIZE            = 16
-        POMO_SIZE             = 8
+        POMO_SIZE             = 6
         VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
-        VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
+        VALIDATION_BATCH_SIZE = 100          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
-        USE_ENTROPY_REG     = False
+        USE_ENTROPY_REG     = True
         ENTROPY_COEF        = 0.01
         BASELINE_TYPE       = 'pomo'
         NORMALIZE_ADVANTAGE = True
@@ -169,10 +169,10 @@ if __name__ == "__main__":
     env_params = {
          'batch_size': BATCH_SIZE,
          'pomo_size': POMO_SIZE,
-         'N_P': 10,  # 프로젝트 수
-         'N_A_min': 4,  # 프로젝트당 최소 activity 수
-         'N_A_max': 6,  # 프로젝트당 최대 activity 수
-         'N_T': 5,  # 팀 수
+         'N_P': 15,  # 프로젝트 수
+         'N_A_min': 6,  # 프로젝트당 최소 activity 수
+         'N_A_max': 8,  # 프로젝트당 최대 activity 수
+         'N_T': 7,  # 팀 수
          'duration_min': 1,  # 최소 작업 시간
          'duration_max': 99,  # 최대 작업 시간
          'precedence_prob': 0.3,  # 선행 관계 생성 확률

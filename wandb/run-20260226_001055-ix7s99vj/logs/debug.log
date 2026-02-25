@@ -1,0 +1,49 @@
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_setup.py:_flush():81] Current SDK version is 0.21.3
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_setup.py:_flush():81] Configure stats pid to 14380
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\.config\wandb\settings
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_setup.py:_flush():81] Loading settings from C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\settings
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_init.py:setup_run_log_directory():686] Logging user logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260226_001055-ix7s99vj\logs\debug.log
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_init.py:setup_run_log_directory():687] Logging internal logs to C:\Users\yongjae\Desktop\Independent_research\RCMPSP\RCMPSP_1st\wandb\run-20260226_001055-ix7s99vj\logs\debug-internal.log
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_init.py:init():813] calling init triggers
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_init.py:init():818] wandb.init called with sweep_config: {}
+config: {'objective': 'tardiness', 'algorithm': 'PPO', 'model_type': 'daniel', 'N_P': 15, 'N_A_min': 6, 'N_A_max': 8, 'N_T': 7, 'batch_size': 128, 'pomo_size': 1, 'epochs': 1000, 'learning_rate': 0.0003, 'normalize_advantage': False, 'entropy_coef': 0.01, 'reward_type': 'stepwise', 'ppo_adv_norm_type': 'per_instance', 'fea_act_input_dim': 14, 'fea_team_input_dim': 8, 'layer_fea_output_dim': [32, 8], '_wandb': {}}
+2026-02-26 00:10:55,308 INFO    MainThread:14380 [wandb_init.py:init():854] starting backend
+2026-02-26 00:10:57,548 INFO    MainThread:14380 [wandb_init.py:init():857] sending inform_init request
+2026-02-26 00:10:57,586 INFO    MainThread:14380 [wandb_init.py:init():865] backend started and connected
+2026-02-26 00:10:57,587 INFO    MainThread:14380 [wandb_init.py:init():936] updated telemetry
+2026-02-26 00:10:57,622 INFO    MainThread:14380 [wandb_init.py:init():960] communicating run to backend with 90.0 second timeout
+2026-02-26 00:10:58,485 INFO    MainThread:14380 [wandb_init.py:init():1011] starting run threads in backend
+2026-02-26 00:10:58,548 INFO    MainThread:14380 [wandb_run.py:_console_start():2494] atexit reg
+2026-02-26 00:10:58,549 INFO    MainThread:14380 [wandb_run.py:_redirect():2342] redirect: wrap_raw
+2026-02-26 00:10:58,549 INFO    MainThread:14380 [wandb_run.py:_redirect():2411] Wrapping output streams.
+2026-02-26 00:10:58,549 INFO    MainThread:14380 [wandb_run.py:_redirect():2434] Redirects installed.
+2026-02-26 00:10:58,551 INFO    MainThread:14380 [wandb_init.py:init():1057] run started, returning control to user process
+2026-02-26 00:11:42,983 ERROR   wandb-AsyncioManager-main:14380 [service_client.py:_forward_responses():81] Error reading server response.
+Traceback (most recent call last):
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\windows_events.py", line 463, in finish_socket_func
+    return ov.getresult()
+           ~~~~~~~~~~~~^^
+OSError: [WinError 64] 지정된 네트워크 이름을 더 이상 사용할 수 없습니다
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\lib\service\service_client.py", line 77, in _forward_responses
+    while response := await self._read_server_response():
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yongjae\AppData\Roaming\Python\Python313\site-packages\wandb\sdk\lib\service\service_client.py", line 91, in _read_server_response
+    header = await self._reader.readexactly(_HEADER_BYTE_INT_LEN)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\streams.py", line 769, in readexactly
+    await self._wait_for_data('readexactly')
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\streams.py", line 539, in _wait_for_data
+    await self._waiter
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\proactor_events.py", line 286, in _loop_reading
+    length = fut.result()
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\windows_events.py", line 804, in _poll
+    value = callback(transferred, key, ov)
+  File "C:\ProgramData\anaconda3\envs\RSS_1st\Lib\asyncio\windows_events.py", line 467, in finish_socket_func
+    raise ConnectionResetError(*exc.args)
+ConnectionResetError: [WinError 64] 지정된 네트워크 이름을 더 이상 사용할 수 없습니다
+2026-02-26 00:11:42,986 INFO    wandb-AsyncioManager-main:14380 [mailbox.py:close():137] Closing mailbox, abandoning 2 handles.

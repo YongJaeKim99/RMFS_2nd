@@ -621,8 +621,8 @@ class Scheduling_Trainer:
                     done_tensor
                 )
 
-        # Final objective for logging
-        final_obj = env._get_obj().mean().item()
+        # Final objective for logging (원본 스케일)
+        final_obj = env._get_obj_original_scale().mean().item()
 
         # --------------------------------------------------
         # 3. GAE Advantages
@@ -876,8 +876,8 @@ class Scheduling_Trainer:
         else:
             loss = policy_loss.mean()
         
-        # 목적함수값 계산
-        obj_values = env._get_obj()  # (batch_size * pomo_size,) 목적함수값
+        # 목적함수값 계산 (원본 스케일 — 로깅용)
+        obj_values = env._get_obj_original_scale()  # (batch_size * pomo_size,) 목적함수값
         
         # 에피소드 완료 시 각 배치별 목적함수 출력 (verbose_logging이 True일 때만)
         if self.verbose_logging:
@@ -1385,8 +1385,8 @@ class Scheduling_Trainer:
                     team_idx.to(val_env.device)
                 )
 
-        # 배치 전체 목적함수값 계산 → 평균
-        obj_values = val_env._get_obj()  # (batch_total,)
+        # 배치 전체 목적함수값 계산 → 평균 (원본 스케일)
+        obj_values = val_env._get_obj_original_scale()  # (batch_total,)
         avg_obj_value = obj_values.mean().item()
 
         self.model.train()

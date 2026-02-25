@@ -18,10 +18,10 @@ if __name__ == "__main__":
     # =================================================================
 
     # Seed 설정
-    SEED = 0
+    SEED = 2026
 
     # 인스턴스 수 (하나의 pickle 파일에 담길 인스턴스 수)
-    NUM_INSTANCES = 50
+    NUM_INSTANCES = 100
     POMO_SIZE = 1   # 테스트는 POMO 사용 안 함
 
     # =================================================================
@@ -35,16 +35,19 @@ if __name__ == "__main__":
     env_params = {
         'batch_size': NUM_INSTANCES,
         'pomo_size': POMO_SIZE,
-        'N_P': 5,  # 프로젝트 수
+        'N_P': 10,  # 프로젝트 수
         'N_A_min': 4,  # 프로젝트당 최소 activity 수
         'N_A_max': 6,  # 프로젝트당 최대 activity 수
-        'N_T': 4,  # 팀 수
-        'duration_min': 2,  # 최소 작업 시간
-        'duration_max': 6,  # 최대 작업 시간
+        'N_T': 5,  # 팀 수
+        'duration_min': 1,  # 최소 작업 시간
+        'duration_max': 99,  # 최대 작업 시간
         'precedence_prob': 0.3,  # 선행 관계 생성 확률
-        'mutex_prob': 0.1,  # 동시 불가 생성 확률
+        'mutex_prob': 0.03,  # 동시 불가 생성 확률
+        'max_preds': 5,   # activity당 최대 선행 작업 수 (tensor 패딩 크기)
+        'max_succs': 5,   # activity당 최대 후행 작업 수 (tensor 패딩 크기)
+        'max_mutex': 2,   # activity당 최대 동시 불가 작업 수 (tensor 패딩 크기)
         'eligible_teams_ratio': 0.6,  # 평균 eligible 팀 비율
-        'due_date_tightness': 1.3,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
+        'due_date_tightness': 1.2,  # Due date 여유도 (1.0 = tight, 1.5 = loose)
         'objective': OBJECTIVE,
         'debug_env': False,
     }
