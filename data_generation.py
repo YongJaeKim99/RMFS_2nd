@@ -21,7 +21,7 @@ if __name__ == "__main__":
     SEED = 2026
 
     # 인스턴스 수 (하나의 pickle 파일에 담길 인스턴스 수)
-    NUM_INSTANCES = 100
+    NUM_INSTANCES = 50
     POMO_SIZE = 1   # 테스트는 POMO 사용 안 함
 
     # =================================================================
@@ -35,10 +35,10 @@ if __name__ == "__main__":
     env_params = {
         'batch_size': NUM_INSTANCES,
         'pomo_size': POMO_SIZE,
-        'N_P': 10,  # 프로젝트 수
-        'N_A_min': 4,  # 프로젝트당 최소 activity 수
-        'N_A_max': 6,  # 프로젝트당 최대 activity 수
-        'N_T': 5,  # 팀 수
+        'N_P': 15,  # 프로젝트 수
+        'N_A_min': 6,  # 프로젝트당 최소 activity 수
+        'N_A_max': 8,  # 프로젝트당 최대 activity 수
+        'N_T': 7,  # 팀 수
         'duration_min': 1,  # 최소 작업 시간
         'duration_max': 99,  # 최대 작업 시간
         'precedence_prob': 0.3,  # 선행 관계 생성 확률

@@ -41,7 +41,7 @@ if __name__ == "__main__":
         BATCH_SIZE            = 256       # 논문: num_envs = 20 → GPU 활용 위해 확장
         POMO_SIZE             = 1          # PPO 학습 시 기본 1
         VALIDATION_INTERVAL   = 5         # 논문: validate_timestep = 10
-        VALIDATION_BATCH_SIZE = 100
+        VALIDATION_BATCH_SIZE = 50
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = True
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         BATCH_SIZE            = 1          # IL에서는 학습 데이터가 미리 수집됨 (env 생성용 placeholder)
         POMO_SIZE             = 1
         VALIDATION_INTERVAL   = 5
-        VALIDATION_BATCH_SIZE = 100
+        VALIDATION_BATCH_SIZE = 50
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 1e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = False
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         BATCH_SIZE            = 16
         POMO_SIZE             = 6
         VALIDATION_INTERVAL   = 5          # ← 매 epoch 확인 (원래: 5)
-        VALIDATION_BATCH_SIZE = 100          # ← 동작 확인용 (원래: 50)
+        VALIDATION_BATCH_SIZE = 50          # ← 동작 확인용 (원래: 50)
         VALIDATION_POMO_SIZE  = 1
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG     = True
