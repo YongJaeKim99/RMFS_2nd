@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 1) 체크포인트 설정
     # -----------------------------
-    CHECKPOINT_FOLDER = "20260224_105414_tardiness_DANIEL_REINFORCE"
+    CHECKPOINT_FOLDER = "20260226_002336_tardiness_DANIEL_REINFORCE"
     CHECKPOINT_FILE = "best_model.pt"
     TEST_ALL_CHECKPOINTS = False
 
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # -----------------------------
     # 3) 테스트할 알고리즘 설정
     # -----------------------------
-    test_algorithms = ["GA"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
+    test_algorithms = ["RL"]  # ["RL"], ["GA"], ["MIP"](Gurobi), ["CP"](CP-SAT), 또는 조합
 
     # GA 설정
     GA_POPULATION_SIZE = 50
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     CP_TIME_LIMIT = 300         # 인스턴스당 시간 제한 (초)
 
     # IL (Imitation Learning) 레이블 데이터 수집 설정
-    COLLECT_IL = True                              # True: CP 기반 IL 레이블 데이터 수집 모드
+    COLLECT_IL = False                              # True: CP 기반 IL 레이블 데이터 수집 모드
     IL_CP_TIME_LIMIT = 300                           # 레이블 수집용 CP 시간 제한 (넉넉하게)
     IL_SAVE_PATH = 'data/il/il_labels.pickle'       # 저장 경로
 
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     # 인스턴스 범위 설정
     # -----------------------------
     INSTANCE_START = 0  # 시작 인스턴스 번호 (None이면 0부터)
-    INSTANCE_END = 100    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
+    INSTANCE_END = 50    # 끝 인스턴스 번호, 미포함 (None이면 끝까지)
 
     # -----------------------------
     # 기타 설정
