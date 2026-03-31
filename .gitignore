@@ -1,2 +1,5 @@
-# Large data files (exceed GitHub 100MB limit)
-data/backup_500/
+__pycache__/
+*.pyc
+wandb/
+checkpoints/
+results/

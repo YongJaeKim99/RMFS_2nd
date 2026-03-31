@@ -1,1 +1,0 @@
-{"val/improvement_pct":0,"train/loss":6.331497125e+06,"val/best_improvement_pct":0,"train/tardiness":5440.96875,"_step":1,"epoch_time":20.52679753303528,"val/best_tardiness":3346.080078125,"_timestamp":1.7718219597948608e+09,"_wandb":{"runtime":28},"val/tardiness":3346.080078125,"_runtime":28.8591852,"train/best_tardiness":5440.96875}
