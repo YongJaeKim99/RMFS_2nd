@@ -54,6 +54,10 @@ class RMFSBatchEnv:
         self.V = self.N_S + self.N_W
         self.d_edge = 9  # edge feature dimension
 
+        # 연속 action 좌표 스케일링용 (storage 영역 범위)
+        self.storage_max_x = float((block_cols - 1) * (block_w + 1) + (block_w - 1))
+        self.storage_max_y = float((block_rows - 1) * (block_h + 1) + (block_h - 1))
+
         # B개의 독립 RMFS 환경 생성 (print 억제)
         self.envs = []
         _stdout = sys.stdout
@@ -170,13 +174,14 @@ class RMFSBatchEnv:
         모든 활성 환경에 action을 적용한다.
 
         Args:
-            actions: (B,) int tensor -- action per instance (0=Stay, 1~N_S=storage index)
+            actions: (B,) int tensor (discrete) 또는 (B, 2) float tensor (continuous x,y in [0,1])
 
         Returns:
             state: RMFSState
             rewards: (B,) float tensor
             all_done: bool
         """
+        is_continuous = (actions.dim() == 2 and actions.shape[1] == 2)
         actions_np = actions.cpu().numpy()
 
         graph_states = []
@@ -187,7 +192,12 @@ class RMFSBatchEnv:
                 graph_states.append(self._zero_graph_state())
                 continue
 
-            gs, r, done, infeasible, makespan = self.envs[i].step(int(actions_np[i]))
+            if is_continuous:
+                x = float(actions_np[i, 0]) * self.storage_max_x
+                y = float(actions_np[i, 1]) * self.storage_max_y
+                gs, r, done, infeasible, makespan = self.envs[i].step_continuous(x, y)
+            else:
+                gs, r, done, infeasible, makespan = self.envs[i].step(int(actions_np[i]))
             rewards[i] = r
             self.makespans[i] = makespan
 

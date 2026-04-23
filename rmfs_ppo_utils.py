@@ -3,9 +3,11 @@ PPO utilities for RMFS training with graph state.
 
 Graph state (RMFSState 필드별)를 저장하는 PPO Memory.
 Variable-length episode를 위한 mask_seq도 추가한다.
+연속 action space (Beta/Gaussian) 유틸리티도 포함.
 """
 import torch
-from torch.distributions import Categorical
+import torch.nn.functional as F
+from torch.distributions import Categorical, Beta, Normal
 
 
 def eval_actions(pi, actions):
@@ -23,6 +25,97 @@ def eval_actions(pi, actions):
     dist = Categorical(pi.squeeze())
     log_probs = dist.log_prob(actions).reshape(-1)
     entropy = dist.entropy().mean()
+    return log_probs, entropy
+
+
+def build_continuous_dist(raw_params, action_type):
+    """
+    모델의 raw output (B, 4)으로부터 연�� 분포를 생성한다.
+
+    Args:
+        raw_params: (B, 4) 모델 출력
+        action_type: 'continuous_beta' or 'continuous_gaussian'
+
+    Returns:
+        dist_x, dist_y: 각 축의 분포 객체
+    """
+    if action_type == 'continuous_beta':
+        alpha_x = F.softplus(raw_params[:, 0]) + 1.0
+        beta_x = F.softplus(raw_params[:, 1]) + 1.0
+        alpha_y = F.softplus(raw_params[:, 2]) + 1.0
+        beta_y = F.softplus(raw_params[:, 3]) + 1.0
+        return Beta(alpha_x, beta_x), Beta(alpha_y, beta_y)
+    else:  # continuous_gaussian
+        mu_x = torch.sigmoid(raw_params[:, 0])
+        mu_y = torch.sigmoid(raw_params[:, 1])
+        std_x = torch.exp(raw_params[:, 2]).clamp(0.01, 0.5)
+        std_y = torch.exp(raw_params[:, 3]).clamp(0.01, 0.5)
+        return Normal(mu_x, std_x), Normal(mu_y, std_y)
+
+
+def sample_continuous_action(raw_params, action_type, greedy=False):
+    """
+    연속 (x, y) action을 샘플링하거나 mean을 반환한다.
+
+    Args:
+        raw_params: (B, 4) 모델 출력
+        action_type: 'continuous_beta' or 'continuous_gaussian'
+        greedy: True이면 분포 mean 반환 (validation/test용)
+
+    Returns:
+        action_xy: (B, 2) [0, 1] 범위의 정규화 좌표
+        log_prob: (B,) log probability
+        entropy: (B,) entropy
+    """
+    dist_x, dist_y = build_continuous_dist(raw_params, action_type)
+
+    if greedy:
+        x = dist_x.mean
+        y = dist_y.mean
+    else:
+        x = dist_x.sample()
+        y = dist_y.sample()
+
+    x = x.clamp(0.0, 1.0)
+    y = y.clamp(0.0, 1.0)
+
+    action_xy = torch.stack([x, y], dim=-1)  # (B, 2)
+
+    # Beta requires strictly (0, 1) for log_prob
+    x_lp = x.clamp(1e-6, 1.0 - 1e-6) if action_type == 'continuous_beta' else x
+    y_lp = y.clamp(1e-6, 1.0 - 1e-6) if action_type == 'continuous_beta' else y
+
+    log_prob = dist_x.log_prob(x_lp) + dist_y.log_prob(y_lp)  # (B,)
+    entropy = dist_x.entropy() + dist_y.entropy()  # (B,)
+
+    return action_xy, log_prob, entropy
+
+
+def eval_continuous_actions(raw_params, actions_xy, action_type):
+    """
+    PPO K-epoch update에서 ��장된 연속 action의 새 log_prob/entropy를 계산한다.
+
+    Args:
+        raw_params: (B, 4) 현재 policy의 raw output
+        actions_xy: (B, 2) rollout 시 저장된 (x, y) action
+        action_type: 'continuous_beta' or 'continuous_gaussian'
+
+    Returns:
+        log_probs: (B,)
+        entropy: scalar mean entropy
+    """
+    dist_x, dist_y = build_continuous_dist(raw_params, action_type)
+
+    x_action = actions_xy[:, 0]
+    y_action = actions_xy[:, 1]
+
+    if action_type == 'continuous_beta':
+        x_action = x_action.clamp(1e-6, 1.0 - 1e-6)
+        y_action = y_action.clamp(1e-6, 1.0 - 1e-6)
+
+    log_probs = dist_x.log_prob(x_action) + dist_y.log_prob(y_action)
+    entropy = (dist_x.entropy() + dist_y.entropy()).mean()
+
     return log_probs, entropy
 
 
@@ -50,7 +143,7 @@ class RMFSPPOMemory:
         self.action_mask_seq = []        # [T, tensor (B, N_S+1)]
 
         # Transition data
-        self.action_seq = []     # [T, tensor (B,)]
+        self.action_seq = []     # [T, tensor (B,)] discrete or (B, 2) continuous
         self.reward_seq = []     # [T, tensor (B,)]
         self.val_seq = []        # [T, tensor (B,)]
         self.done_seq = []       # [T, tensor (B,) bool]

@@ -543,6 +543,36 @@ class RMFS_Environment(object):
 
         return self.graph_state, self.reward, self.isFinished(self.current_time), infeasible, self.Makespan
 
+    def find_nearest_available_storage(self, x, y):
+        """
+        연속 (x, y) 좌표에서 가장 가까운 가용 storage를 찾는다.
+
+        Args:
+            x: float, warehouse x-coordinate
+            y: float, warehouse y-coordinate
+
+        Returns:
+            int: 가용 storage 중 맨하탄 거리가 최소인 storage index (0-indexed)
+        """
+        available = self.Storage_AT <= self.Pod_departure_time + self.TT_WS[self.curws]
+        distances = np.abs(self.storage_coords[:, 0] - x) + np.abs(self.storage_coords[:, 1] - y)
+        distances[~available] = np.inf
+        return int(np.argmin(distances))
+
+    def step_continuous(self, x, y):
+        """
+        연속 (x, y) 좌표로 step. nearest available storage를 찾아 기존 step()에 위임.
+
+        Args:
+            x: float, warehouse x-coordinate
+            y: float, warehouse y-coordinate
+
+        Returns:
+            step()과 동일: (graph_state, reward, done, infeasible, makespan)
+        """
+        storage_idx = self.find_nearest_available_storage(x, y)
+        return self.step(storage_idx + 1)  # +1: action 0=Stay offset
+
     def isFinished(self, current_time):
         return current_time == self._max_episode_steps or self.done
 

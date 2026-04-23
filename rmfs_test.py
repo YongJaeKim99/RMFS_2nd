@@ -11,6 +11,7 @@ import sys
 import io
 import torch
 from torch.distributions import Categorical
+from rmfs_ppo_utils import sample_continuous_action
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -307,6 +308,12 @@ if __name__ == "__main__":
                 _N_W = _ckpt_env_params.get('N_W', 4)
                 _V = _N_S + _N_W
 
+                # action_type: checkpoint에서 로드 (없으면 discrete)
+                _action_type = model_params.get(
+                    'action_type',
+                    checkpoint.get('trainer_params', {}).get('action_type', 'discrete')
+                )
+
                 model_config = SimpleNamespace(
                     N_S=_N_S,
                     N_W=_N_W,
@@ -321,6 +328,7 @@ if __name__ == "__main__":
                     hidden_dim_actor=model_params['hidden_dim_actor'],
                     num_mlp_layers_critic=model_params['num_mlp_layers_critic'],
                     hidden_dim_critic=model_params['hidden_dim_critic'],
+                    action_type=_action_type,
                 )
                 model = GATActorCritic(model_config).to(device)
 
@@ -337,7 +345,8 @@ if __name__ == "__main__":
                 model.eval()
                 print(f"RL 모델 로드 완료: {ckpt_path.name}")
                 print(f"  N_S={_N_S}, N_W={_N_W}, "
-                      f"d_hidden={model_params['d_hidden']}")
+                      f"d_hidden={model_params['d_hidden']}, "
+                      f"action_type={_action_type}")
 
                 # Adjacency matrix
                 adj_mat = torch.zeros(_V, _V, dtype=torch.bool)
@@ -558,8 +567,12 @@ if __name__ == "__main__":
 
                     while not all_done:
                         state_dev = _state_to_device(state)
-                        pi, v = model(state_dev, adj)
-                        action = torch.argmax(pi, dim=-1)
+                        output, v = model(state_dev, adj)
+                        if _action_type == 'discrete':
+                            action = torch.argmax(output, dim=-1)
+                        else:
+                            action, _, _ = sample_continuous_action(
+                                output, _action_type, greedy=True)
                         state, rewards, all_done = test_env.step(action.cpu())
 
                     greedy_scores = test_env.get_makespan()
@@ -628,9 +641,13 @@ if __name__ == "__main__":
 
                             while not all_done:
                                 state_dev = _state_to_device(state)
-                                pi, v = model(state_dev, adj)
-                                dist = Categorical(pi)
-                                action = dist.sample()
+                                output, v = model(state_dev, adj)
+                                if _action_type == 'discrete':
+                                    dist = Categorical(output)
+                                    action = dist.sample()
+                                else:
+                                    action, _, _ = sample_continuous_action(
+                                        output, _action_type, greedy=False)
                                 state, rewards, all_done = sample_env.step(
                                     action.cpu())
 

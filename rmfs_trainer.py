@@ -69,6 +69,10 @@ class RMFS_Trainer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             alg_type = trainer_params.get('algorithm_type', 'reinforce')
             alg_label = {'ppo': 'PPO', 'reinforce': 'REINFORCE'}.get(alg_type, 'REINFORCE')
+            action_type = trainer_params.get('action_type', 'discrete')
+            if action_type != 'discrete':
+                act_label = action_type.split('_')[1].capitalize()  # 'Beta' or 'Gaussian'
+                alg_label = f"{alg_label}_{act_label}"
             self.checkpoint_dir = f"./checkpoints/{timestamp}_RMFS_GAT_{alg_label}"
             os.makedirs(self.checkpoint_dir, exist_ok=True)
             print(f"Checkpoint dir: {self.checkpoint_dir}")
@@ -89,6 +93,9 @@ class RMFS_Trainer:
         self.N_W = env_params['N_W']
         self.V = self.N_S + self.N_W
 
+        # Action type 설정
+        self.action_type = trainer_params.get('action_type', 'discrete')
+
         # 모델 초기화
         from types import SimpleNamespace
         model_config = SimpleNamespace(
@@ -105,6 +112,7 @@ class RMFS_Trainer:
             hidden_dim_actor=model_params['hidden_dim_actor'],
             num_mlp_layers_critic=model_params['num_mlp_layers_critic'],
             hidden_dim_critic=model_params['hidden_dim_critic'],
+            action_type=self.action_type,
         )
         self.model = GATActorCritic(model_config).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params['optimizer'])
@@ -445,6 +453,8 @@ class RMFS_Trainer:
 
     def _train_one_minibatch(self):
         """REINFORCE 1 minibatch: rollout + loss 계산."""
+        from rmfs_ppo_utils import sample_continuous_action
+
         batch_size = self.env_params['batch_size']
         entropy_coef = self.trainer_params.get('entropy_coef', 0.0)
         use_entropy = entropy_coef > 0
@@ -466,20 +476,28 @@ class RMFS_Trainer:
             step_count += 1
 
             state_dev = self._state_to_device(state)
-            pi, v = self.model(state_dev, self.adj)
+            output, v = self.model(state_dev, self.adj)
 
-            dist = Categorical(pi)
-            action = dist.sample()         # (B,)
-            log_prob = dist.log_prob(action)  # (B,)
+            if self.action_type == 'discrete':
+                dist = Categorical(output)
+                action = dist.sample()
+                log_prob = dist.log_prob(action)
+                step_entropy = dist.entropy()
+                env_action = action.cpu()
+            else:
+                action_xy, log_prob, step_entropy = sample_continuous_action(
+                    output, self.action_type
+                )
+                env_action = action_xy.cpu()  # (B, 2)
 
             # 활성 인스턴스만 누적
             active_mask = env.get_active_mask().float().to(self.device)
             log_prob_sum += log_prob * active_mask
 
             if use_entropy:
-                cumulative_entropy += dist.entropy() * active_mask
+                cumulative_entropy += step_entropy * active_mask
 
-            state, rewards, all_done = env.step(action.cpu())
+            state, rewards, all_done = env.step(env_action)
             cumulative_reward += rewards.to(self.device) * active_mask
 
             if self.debug_log_steps:
@@ -527,7 +545,7 @@ class RMFS_Trainer:
 
     def _train_ppo_one_batch(self, problem):
         """PPO-Clip + GAE for RMFS with graph state."""
-        from rmfs_ppo_utils import eval_actions
+        from rmfs_ppo_utils import eval_actions, eval_continuous_actions, sample_continuous_action
         import math
 
         batch_size = self.env_params['batch_size']
@@ -552,11 +570,19 @@ class RMFS_Trainer:
                 step_count += 1
 
                 state_dev = self._state_to_device(state)
-                pi, v = self.model(state_dev, self.adj)
+                output, v = self.model(state_dev, self.adj)
 
-                dist = Categorical(pi)
-                action = dist.sample()
-                log_prob = dist.log_prob(action)
+                if self.action_type == 'discrete':
+                    dist = Categorical(output)
+                    action = dist.sample()
+                    log_prob = dist.log_prob(action)
+                    env_action = action.cpu()
+                else:
+                    action_xy, log_prob, _ = sample_continuous_action(
+                        output, self.action_type
+                    )
+                    action = action_xy  # (B, 2)
+                    env_action = action_xy.cpu()
 
                 # 활성 마스크 (step 전)
                 active_mask = env.get_active_mask().to(self.device)
@@ -565,7 +591,7 @@ class RMFS_Trainer:
                 memory.push_state(state)
 
                 # Step
-                state, rewards, all_done = env.step(action.cpu())
+                state, rewards, all_done = env.step(env_action)
 
                 # Reward 처리
                 if self.reward_type == 'stepwise':
@@ -647,7 +673,7 @@ class RMFS_Trainer:
                 )
 
                 # Forward through CURRENT policy
-                pi_new, v_new = self.model(mini_state, self.adj)
+                output_new, v_new = self.model(mini_state, self.adj)
 
                 actions_batch = t_data[5][idx]
                 old_logprobs = t_data[9][idx]
@@ -655,7 +681,12 @@ class RMFS_Trainer:
                 v_target_batch = v_target[idx]
 
                 # Evaluate actions with new policy
-                new_logprobs, ent = eval_actions(pi_new, actions_batch)
+                if self.action_type == 'discrete':
+                    new_logprobs, ent = eval_actions(output_new, actions_batch)
+                else:
+                    new_logprobs, ent = eval_continuous_actions(
+                        output_new, actions_batch, self.action_type
+                    )
 
                 # PPO ratio and clipped surrogate loss
                 ratios = torch.exp(new_logprobs - old_logprobs.detach())
@@ -696,6 +727,8 @@ class RMFS_Trainer:
 
     def _eval_validation(self, validation_batch_size=10):
         """Greedy rollout on validation set."""
+        from rmfs_ppo_utils import sample_continuous_action
+
         self.model.eval()
 
         # Validation 데이터 로드
@@ -718,9 +751,17 @@ class RMFS_Trainer:
         with torch.no_grad():
             while not all_done:
                 state_dev = self._state_to_device(state)
-                pi, v = self.model(state_dev, self.adj)
-                action = torch.argmax(pi, dim=-1)  # Greedy
-                state, rewards, all_done = val_env.step(action.cpu())
+                output, v = self.model(state_dev, self.adj)
+
+                if self.action_type == 'discrete':
+                    env_action = torch.argmax(output, dim=-1).cpu()  # Greedy
+                else:
+                    action_xy, _, _ = sample_continuous_action(
+                        output, self.action_type, greedy=True
+                    )
+                    env_action = action_xy.cpu()  # (B, 2)
+
+                state, rewards, all_done = val_env.step(env_action)
 
         makespans = val_env.get_makespan()
         avg_makespan = makespans.mean().item()

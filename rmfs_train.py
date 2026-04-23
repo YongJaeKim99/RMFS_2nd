@@ -15,12 +15,17 @@ if __name__ == "__main__":
     # =================================================================
     ALGORITHM_TYPE = 'ppo'  # 'reinforce' or 'ppo'
 
+    # =================================================================
+    # Action space 선택
+    # =================================================================
+    ACTION_TYPE = 'continuous_gaussian'  # 'discrete', 'continuous_beta', 'continuous_gaussian'
+
     # ------------------------------------------------------------------
     # 알고리즘별 기본 하이퍼파라미터
     # ------------------------------------------------------------------
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS = 500
-        BATCH_SIZE = 3
+        BATCH_SIZE = 32
         VALIDATION_INTERVAL = 5
         VALIDATION_BATCH_SIZE = 20
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
@@ -77,7 +82,7 @@ if __name__ == "__main__":
     RESUME_TRAINING = False
 
     # Device
-    DEVICE_MODE = 'cpu'  # RMFS env는 numpy 기반이라 CPU 권장
+    DEVICE_MODE = 'gpu'  # RMFS env는 numpy 기반이라 CPU 권장
 
     # Wandb
     USE_WANDB = True
@@ -127,6 +132,7 @@ if __name__ == "__main__":
         'Large': True,         # Large layout flag
         'seed_base': 0,        # Base seed for instance generation
         'force_mask_stay': FORCE_MASK_STAY,  # True: Stay 마스킹으로 deadlock 방지
+        'action_type': ACTION_TYPE,
     }
 
     # =================================================================
@@ -144,6 +150,7 @@ if __name__ == "__main__":
         'hidden_dim_actor': 64,
         'num_mlp_layers_critic': 2,
         'hidden_dim_critic': 64,
+        'action_type': ACTION_TYPE,
     }
 
     # =================================================================
@@ -184,6 +191,7 @@ if __name__ == "__main__":
         'ppo_adv_norm_type': PPO_ADV_NORM_TYPE,
         'reward_type': REWARD_TYPE,
         'debug_log_steps': DEBUG_LOG_STEPS,
+        'action_type': ACTION_TYPE,
     }
 
     # =================================================================
@@ -205,11 +213,15 @@ if __name__ == "__main__":
               f"ploss_coef={PPO_PLOSS_COEF}")
         print(f"  n_resample={N_RESAMPLE}, minibatch_size={PPO_MINIBATCH_SIZE}")
         print(f"  adv_norm_type={PPO_ADV_NORM_TYPE}")
+    print(f"Action Type: {ACTION_TYPE}")
     print(f"Model: GATv2 Actor-Critic "
           f"(d_hidden={model_params['d_hidden']}, "
           f"n_layers={model_params['n_gat_layers']}, "
           f"n_heads={model_params['n_heads']})")
-    print(f"  Action space: {N_S + 1} (Stay + {N_S} storages)")
+    if ACTION_TYPE == 'discrete':
+        print(f"  Action space: {N_S + 1} (Stay + {N_S} storages)")
+    else:
+        print(f"  Action space: continuous (x, y) -> nearest available storage")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
     print(f"Reward Type: {REWARD_TYPE}")
