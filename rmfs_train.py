@@ -26,6 +26,7 @@ if __name__ == "__main__":
     if ALGORITHM_TYPE == 'ppo':
         EPOCHS = 500
         BATCH_SIZE = 32
+        POMO_SIZE = 1           # PPO에서는 사용되지 않음
         VALIDATION_INTERVAL = 5
         VALIDATION_BATCH_SIZE = 20
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
@@ -36,12 +37,13 @@ if __name__ == "__main__":
     else:  # 'reinforce'
         EPOCHS = 500
         BATCH_SIZE = 64
+        POMO_SIZE = 8           # POMO: 같은 인스턴스를 K번 rollout (1이면 POMO 미사용)
         VALIDATION_INTERVAL = 5
         VALIDATION_BATCH_SIZE = 20
         optimizer_params = {'optimizer': {'lr': 3e-4, 'weight_decay': 0}}
         USE_ENTROPY_REG = True
         ENTROPY_COEF = 0.01
-        BASELINE_TYPE = 'batch'
+        BASELINE_TYPE = 'pomo'  # 'pomo': 인스턴스별 POMO baseline, 'batch': 배치 전체 baseline
         NORMALIZE_ADVANTAGE = True
 
     # ------------------------------------------------------------------
@@ -61,8 +63,9 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Reward 방식
     # ------------------------------------------------------------------
-    REWARD_TYPE = 'stepwise'  # 'stepwise': 매 step Pre_Makespan - Makespan (기본)
-                               # 'sparse':   episode 끝에만 -Makespan
+    REWARD_TYPE = 'lb_stepwise'  # 'stepwise':    매 step Pre_Makespan - Makespan
+                                  # 'lb_stepwise': 매 step Pre_LB - LB (Lower Bound 기반)
+                                  # 'sparse':      episode 끝에만 -Makespan
 
     # ------------------------------------------------------------------
     # Deadlock 방지: Stay(action 0) 강제 마스킹
@@ -192,6 +195,7 @@ if __name__ == "__main__":
         'reward_type': REWARD_TYPE,
         'debug_log_steps': DEBUG_LOG_STEPS,
         'action_type': ACTION_TYPE,
+        'pomo_size': POMO_SIZE,
     }
 
     # =================================================================
@@ -224,6 +228,9 @@ if __name__ == "__main__":
         print(f"  Action space: continuous (x, y) -> nearest available storage")
     print(f"Epochs: {EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
+    if ALGORITHM_TYPE == 'reinforce' and POMO_SIZE > 1:
+        print(f"POMO Size: {POMO_SIZE} (total rollouts per epoch: {BATCH_SIZE * POMO_SIZE})")
+        print(f"Baseline: {BASELINE_TYPE}")
     print(f"Reward Type: {REWARD_TYPE}")
     print(f"Entropy: {'ON' if USE_ENTROPY_REG else 'OFF'} "
           f"(coef={ENTROPY_COEF})")

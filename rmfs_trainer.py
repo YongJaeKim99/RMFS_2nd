@@ -452,22 +452,27 @@ class RMFS_Trainer:
         return avg_loss, avg_reward
 
     def _train_one_minibatch(self):
-        """REINFORCE 1 minibatch: rollout + loss 계산."""
+        """REINFORCE 1 minibatch: rollout + loss 계산. POMO 지원."""
         from rmfs_ppo_utils import sample_continuous_action
 
         batch_size = self.env_params['batch_size']
+        pomo_size = self.trainer_params.get('pomo_size', 1)
+        batch_total = batch_size * pomo_size
         entropy_coef = self.trainer_params.get('entropy_coef', 0.0)
         use_entropy = entropy_coef > 0
 
-        # 환경 초기화
-        env = RMFSBatchEnv(self.env_params, device='cpu')
-        problem = generate_rmfs_data_batch(self.env_params, epoch=self._epoch_counter)
+        # 환경 초기화 (POMO: batch_size * pomo_size 개 환경 생성)
+        env_params_expanded = copy.deepcopy(self.env_params)
+        env_params_expanded['batch_size'] = batch_total
+        env = RMFSBatchEnv(env_params_expanded, device='cpu', reward_type=self.reward_type)
+        problem = generate_rmfs_data_batch(self.env_params, epoch=self._epoch_counter,
+                                           pomo_size=pomo_size)
         state = env.reset(problem)
 
-        log_prob_sum = torch.zeros(batch_size, device=self.device)
-        cumulative_reward = torch.zeros(batch_size, device=self.device)
+        log_prob_sum = torch.zeros(batch_total, device=self.device)
+        cumulative_reward = torch.zeros(batch_total, device=self.device)
         if use_entropy:
-            cumulative_entropy = torch.zeros(batch_size, device=self.device)
+            cumulative_entropy = torch.zeros(batch_total, device=self.device)
 
         all_done = False
         step_count = 0
@@ -488,7 +493,7 @@ class RMFS_Trainer:
                 action_xy, log_prob, step_entropy = sample_continuous_action(
                     output, self.action_type
                 )
-                env_action = action_xy.cpu()  # (B, 2)
+                env_action = action_xy.cpu()  # (B*K, 2)
 
             # 활성 인스턴스만 누적
             active_mask = env.get_active_mask().float().to(self.device)
@@ -508,17 +513,26 @@ class RMFS_Trainer:
                       f"returned={s['returned']['avg']:.0f}/{T} ({s['returned']['min']}~{s['returned']['max']}), "
                       f"current_makespan={s['makespan']['avg']:.1f} ({s['makespan']['min']:.1f}~{s['makespan']['max']:.1f})")
 
-        # Reward: stepwise이면 누적된 step reward, sparse이면 -makespan
-        if self.reward_type == 'stepwise':
+        # Reward: stepwise/lb_stepwise이면 누적된 step reward, sparse이면 -makespan
+        if self.reward_type in ('stepwise', 'lb_stepwise'):
             reward = cumulative_reward
         else:
             reward = -env.get_makespan().to(self.device)
 
-        # Advantage 계산 (batch baseline)
+        # Advantage 계산
         baseline_type = self.trainer_params.get('baseline_type', 'batch')
         normalize_advantage = self.trainer_params.get('normalize_advantage', True)
+        use_pomo = pomo_size > 1
 
-        if baseline_type == 'batch':
+        if baseline_type == 'pomo' and use_pomo:
+            # POMO baseline: 같은 인스턴스의 K개 rollout 평균을 baseline으로 사용
+            reward_reshape = reward.reshape(batch_size, pomo_size)  # (B, K)
+            advantage = reward_reshape - reward_reshape.mean(dim=-1, keepdim=True)
+            if normalize_advantage:
+                advantage_std = reward_reshape.std(dim=-1, keepdim=True, unbiased=False)
+                advantage = advantage / (advantage_std + 1e-8)
+            advantage = advantage.reshape(-1)  # (B*K,)
+        elif baseline_type == 'batch':
             advantage = reward - reward.mean()
             if normalize_advantage:
                 advantage = advantage / (advantage.std() + 1e-8)
@@ -534,8 +548,13 @@ class RMFS_Trainer:
         else:
             loss = policy_loss.mean()
 
-        # 목적함수값 (makespan 평균)
-        obj_value = env.get_makespan().mean().item()
+        # 목적함수값 (makespan 평균, POMO일 때는 인스턴스별 best 사용)
+        makespans = env.get_makespan()
+        if use_pomo:
+            makespans_reshape = makespans.reshape(batch_size, pomo_size)
+            obj_value = makespans_reshape.min(dim=-1).values.mean().item()
+        else:
+            obj_value = makespans.mean().item()
 
         return loss, -obj_value
 
@@ -559,7 +578,7 @@ class RMFS_Trainer:
         memory = self.ppo_memory
         memory.clear_memory()
 
-        env = RMFSBatchEnv(self.env_params, device='cpu')
+        env = RMFSBatchEnv(self.env_params, device='cpu', reward_type=self.reward_type)
         state = env.reset(problem)
         all_done = False
         step_count = 0
@@ -594,7 +613,7 @@ class RMFS_Trainer:
                 state, rewards, all_done = env.step(env_action)
 
                 # Reward 처리
-                if self.reward_type == 'stepwise':
+                if self.reward_type in ('stepwise', 'lb_stepwise'):
                     reward = rewards.to(self.device)
                 else:
                     if all_done:

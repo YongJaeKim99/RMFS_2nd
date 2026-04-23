@@ -445,12 +445,18 @@ class RMFS_Environment(object):
 
         self.Makespan = 0
         self.Pre_Makespan = 0
+        self.LB_Makespan = 0
+        self.Pre_LB_Makespan = 0
         self.Travel_distance = 0
         self.Pre_Travel_distance = 0
 
         self.Robot_Pod = np.full(self.N_P, -1)
 
         infeasible = self.pod_assign()
+
+        # 초기 LB 계산 (pod_assign 이후)
+        self.LB_Makespan = self.compute_lb_makespan()
+        self.Pre_LB_Makespan = self.LB_Makespan
 
         self.current_time = 0
 
@@ -529,19 +535,62 @@ class RMFS_Environment(object):
 
         if infeasible or infeasible2:
             self.reward = -100000
+            self.lb_reward = -100000
             self.done = True
             self.Makespan = 100000
+            self.LB_Makespan = 100000
         else:
             self.Makespan = max(self.Pod_AT)
+            self.LB_Makespan = self.compute_lb_makespan()
             self.reward = self.Pre_Makespan - self.Makespan
+            self.lb_reward = self.Pre_LB_Makespan - self.LB_Makespan
 
         self.current_time += 1
 
         self.Pre_Makespan = self.Makespan
+        self.Pre_LB_Makespan = self.LB_Makespan
 
         self.Pre_Travel_distance = self.Travel_distance
 
         return self.graph_state, self.reward, self.isFinished(self.current_time), infeasible, self.Makespan
+
+    def compute_lb_makespan(self):
+        """
+        현재 상태에서 최종 makespan의 lower bound를 계산한다.
+
+        LB = max(
+            max(Pod_AT),                # 이미 확정된 Pod 완료 시각
+            max_w(ws_workload_lb[w])    # 각 WS의 최소 작업완료 시각
+        )
+
+        각 WS의 workload LB:
+            WS_AT[w]  (WS 가용 시각)
+            + sum of (min_travel + PT + ST) for each remaining task
+            + min_travel (마지막 pod storage 반납)
+        """
+        lb = float(max(self.Pod_AT))
+
+        for w in range(self.N_W):
+            remaining = len(self.Pod_Sequence_in_WS[w]) - self.WS_curseq[w]
+            if remaining <= 0:
+                continue
+
+            min_tt = float(np.min(self.TT_WS[w]))
+
+            # WS가 다시 가용해지는 시각부터 시작
+            ws_lb = float(self.WS_AT[w])
+
+            # 남은 각 task: 최소 pod 도착 이동시간 + 처리시간 + 셋업시간
+            for k in range(remaining):
+                task_idx = self.WS_curseq[w] + k
+                ws_lb += min_tt + self.PT[w][task_idx] + self.ST
+
+            # 마지막 pod의 storage 반납 최소 이동시간
+            ws_lb += min_tt
+
+            lb = max(lb, ws_lb)
+
+        return lb
 
     def find_nearest_available_storage(self, x, y):
         """

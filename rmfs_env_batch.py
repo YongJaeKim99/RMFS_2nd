@@ -34,10 +34,11 @@ class RMFSBatchEnv:
         get_makespan() -> Tensor(B,)
     """
 
-    def __init__(self, env_params, device='cpu'):
+    def __init__(self, env_params, device='cpu', reward_type='stepwise'):
         self.batch_size = env_params['batch_size']
         self.device = torch.device(device)
         self.env_params = env_params
+        self.reward_type = reward_type
 
         block_rows = env_params['block_rows']
         block_cols = env_params['block_cols']
@@ -198,7 +199,11 @@ class RMFSBatchEnv:
                 gs, r, done, infeasible, makespan = self.envs[i].step_continuous(x, y)
             else:
                 gs, r, done, infeasible, makespan = self.envs[i].step(int(actions_np[i]))
-            rewards[i] = r
+
+            if self.reward_type == 'lb_stepwise':
+                rewards[i] = self.envs[i].lb_reward
+            else:
+                rewards[i] = r
             self.makespans[i] = makespan
 
             if done:
