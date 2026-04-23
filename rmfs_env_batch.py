@@ -210,3 +210,25 @@ class RMFSBatchEnv:
     def get_active_mask(self):
         """활성(아직 완료되지 않은) 인스턴스 마스크 반환. (B,) True=active"""
         return ~self.done_mask
+
+    def get_debug_counts(self, instance=0):
+        """디버그용: 단일 인스턴스 (decided, returned, total, sim_time, makespan) 반환."""
+        env = self.envs[instance]
+        sim_time = getattr(env, 'Pod_departure_time', 0.0)
+        makespan = getattr(env, 'Makespan', 0.0)
+        return env.decided_count, env.returned_count, env._max_episode_steps, sim_time, makespan
+
+    def get_debug_counts_all(self):
+        """디버그용: 전체 배치 통계 반환. dict with avg/min/max for each metric."""
+        decisions = [e.decided_count for e in self.envs]
+        returned = [e.returned_count for e in self.envs]
+        total = self.envs[0]._max_episode_steps
+        makespans = [getattr(e, 'Makespan', 0.0) for e in self.envs]
+        sim_times = [getattr(e, 'current_time', 0) for e in self.envs]
+        return {
+            'total': total,
+            'decisions': {'avg': sum(decisions)/len(decisions), 'min': min(decisions), 'max': max(decisions)},
+            'returned': {'avg': sum(returned)/len(returned), 'min': min(returned), 'max': max(returned)},
+            'sim_time': {'avg': sum(sim_times)/len(sim_times), 'min': min(sim_times), 'max': max(sim_times)},
+            'makespan': {'avg': sum(makespans)/len(makespans), 'min': min(makespans), 'max': max(makespans)},
+        }

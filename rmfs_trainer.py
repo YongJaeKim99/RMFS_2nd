@@ -120,6 +120,9 @@ class RMFS_Trainer:
         # Reward 방식 설정
         self.reward_type = trainer_params.get('reward_type', 'stepwise')
 
+        # Debug 옵션
+        self.debug_log_steps = trainer_params.get('debug_log_steps', False)
+
         # 알고리즘 타입 설정
         self.algorithm_type = trainer_params.get('algorithm_type', 'reinforce')
 
@@ -479,6 +482,14 @@ class RMFS_Trainer:
             state, rewards, all_done = env.step(action.cpu())
             cumulative_reward += rewards.to(self.device) * active_mask
 
+            if self.debug_log_steps:
+                s = env.get_debug_counts_all()
+                T = s['total']
+                print(f"  [DEBUG] Step {step_count}: "
+                      f"decisions={s['decisions']['avg']:.0f}/{T} ({s['decisions']['min']}~{s['decisions']['max']}), "
+                      f"returned={s['returned']['avg']:.0f}/{T} ({s['returned']['min']}~{s['returned']['max']}), "
+                      f"current_makespan={s['makespan']['avg']:.1f} ({s['makespan']['min']:.1f}~{s['makespan']['max']:.1f})")
+
         # Reward: stepwise이면 누적된 step reward, sparse이면 -makespan
         if self.reward_type == 'stepwise':
             reward = cumulative_reward
@@ -575,6 +586,14 @@ class RMFS_Trainer:
                     done_tensor,
                     active_mask,
                 )
+
+                if self.debug_log_steps:
+                    s = env.get_debug_counts_all()
+                    T = s['total']
+                    print(f"  [DEBUG] Step {step_count}: "
+                          f"decisions={s['decisions']['avg']:.0f}/{T} ({s['decisions']['min']}~{s['decisions']['max']}), "
+                          f"returned={s['returned']['avg']:.0f}/{T} ({s['returned']['min']}~{s['returned']['max']}), "
+                          f"makespan={s['makespan']['avg']:.1f} ({s['makespan']['min']:.1f}~{s['makespan']['max']:.1f})")
 
         # Final objective
         final_obj = env.get_makespan().mean().item()

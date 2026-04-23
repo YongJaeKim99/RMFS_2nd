@@ -66,6 +66,11 @@ if __name__ == "__main__":
                             # False: 기존 동작 (Stay 항상 유효)
 
     # ------------------------------------------------------------------
+    # 디버그: 매 step 로그 출력
+    # ------------------------------------------------------------------
+    DEBUG_LOG_STEPS = True  # True: 매 step마다 decisions/returned 카운트 출력
+
+    # ------------------------------------------------------------------
     # 체크포인트 재개
     # ------------------------------------------------------------------
     RESUME_FROM_CHECKPOINT = None  # None or "path/to/checkpoint.pt"
@@ -178,6 +183,7 @@ if __name__ == "__main__":
         'n_resample': N_RESAMPLE,
         'ppo_adv_norm_type': PPO_ADV_NORM_TYPE,
         'reward_type': REWARD_TYPE,
+        'debug_log_steps': DEBUG_LOG_STEPS,
     }
 
     # =================================================================

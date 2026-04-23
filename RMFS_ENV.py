@@ -73,6 +73,11 @@ class RMFS_Environment(object):
         self.check = False
         self.done = False
 
+        # Debug tracking
+        self.decided_count = 0
+        self.returned_count = 0
+        self._pending_arrivals = []
+
         print('Environment created...')
 
     def seed(self, n):
@@ -347,7 +352,7 @@ class RMFS_Environment(object):
             n_count = [0] * self.N_W
 
             while sum(n_count) < sum(self.n):
-                random_n = random.randint(25, 35)
+                random_n = min(random.randint(25, 35), N_P)
                 random_population = random.sample(range(0, N_P), random_n)
                 for i in range(self.N_W):
                     random_numbers = random_population.copy()
@@ -451,6 +456,11 @@ class RMFS_Environment(object):
 
         self.done = False
 
+        # Debug tracking reset
+        self.decided_count = 0
+        self.returned_count = 0
+        self._pending_arrivals = []
+
         return self.graph_state
 
     # 시뮬레이션 한 단계 진행
@@ -487,11 +497,35 @@ class RMFS_Environment(object):
                 self.Robot_Pod[self.curpod] = -1
                 self.Travel_distance += self.TT_WS[self.curws][curstorage]
 
+        # --- Debug tracking ---
+        self.decided_count += 1
+        if self.action == 0:
+            self.returned_count += 1  # Stay = 즉시 반납 간주
+        elif not infeasible2:
+            self._pending_arrivals.append(self.Pod_AT[self.curpod])
+
         infeasible = False
 
         if self.current_time < self._max_episode_steps - 1:
 
             infeasible = self.pod_assign()
+
+            # pending pods: Pod_arrival_time(다음 task 시뮬레이션 시간) 이전에 도착한 pod 카운트
+            if not infeasible:
+                new_pending = []
+                for at in self._pending_arrivals:
+                    if at <= self.Pod_arrival_time:
+                        self.returned_count += 1
+                    else:
+                        new_pending.append(at)
+                self._pending_arrivals = new_pending
+            else:
+                self.returned_count += len(self._pending_arrivals)
+                self._pending_arrivals = []
+        else:
+            # 마지막 step: 모든 pending pod는 결국 도착
+            self.returned_count += len(self._pending_arrivals)
+            self._pending_arrivals = []
 
         if infeasible or infeasible2:
             self.reward = -100000
